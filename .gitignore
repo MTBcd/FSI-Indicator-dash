@@ -12,3 +12,4 @@ venv/
 env/
 ENV/
 .venv/
+fsivenv/
