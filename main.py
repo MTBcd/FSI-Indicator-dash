@@ -2,7 +2,6 @@
 import logging
 import pandas as pd
 import configparser
-import numpy as np
 import logging
 from data_fetching import get_all_series
 # from data_fetching import get_ibkr_series, get_fred_series, load_extended_csv_data, scrape_investing_data
