@@ -260,160 +260,203 @@
 
 
 
-
-
-
-
 # data_fetching.py
+# data_fetching.py
+
 import pandas as pd
+import numpy as np
 import requests
-from fredapi import Fred
+import yfinance as yf
 import logging
-from requests.adapters import HTTPAdapter, Retry
+from fredapi import Fred
+import configparser
 
+# ======== Config Loader ==========
 
-import pandas as pd
-import requests
+config = configparser.ConfigParser()
+config.read('config.ini')
 
-def get_price_series(ticker, api_key, years=5):
+# ======== UNIVERSAL SPY P/E AND P/B FETCHER ==========
+
+def get_pe_pb_from_fmp(ticker: str, api_key: str) -> tuple[float, float]:
     """
-    Fetch daily close prices from FMP.
+    Try to get TTM P/E and P/B from FMP ratios-ttm endpoint for a ticker.
+    Returns (pe, pb) as floats or (np.nan, np.nan) if unavailable.
     """
-    url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?timeseries={365*years}&apikey={api_key}"
+    url = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{ticker}?apikey={api_key}"
+    try:
+        resp = requests.get(url, timeout=10)
+        data = resp.json()
+        if isinstance(data, list) and len(data) > 0:
+            record = data[0]
+            pe = record.get("priceEarningsRatioTTM") or record.get("priceToEarningsRatioTTM") or np.nan
+            pb = record.get("priceToBookRatioTTM") or record.get("priceToBookRatio") or np.nan
+            if pe is not None and pe > 0:
+                pe = float(pe)
+            else:
+                pe = np.nan
+            if pb is not None and pb > 0:
+                pb = float(pb)
+            else:
+                pb = np.nan
+            return pe, pb
+    except Exception as e:
+        logging.warning(f"FMP request failed: {e}")
+    return np.nan, np.nan
+
+def get_pe_pb_from_yfinance(ticker: str) -> tuple[float, float]:
+    """
+    Get trailing P/E and P/B from Yahoo Finance via yfinance library.
+    """
+    try:
+        data = yf.Ticker(ticker).info
+        pe = data.get("trailingPE", np.nan)
+        pb = data.get("priceToBook", np.nan)
+        return float(pe) if pe is not None else np.nan, float(pb) if pb is not None else np.nan
+    except Exception as e:
+        logging.warning(f"yfinance request failed: {e}")
+        return np.nan, np.nan
+
+def get_current_pe_pb(ticker: str, api_key: str) -> tuple[float, float]:
+    """
+    Always returns valid (pe, pb) for any ticker (ETF or stock),
+    using FMP first, then Yahoo fallback.
+    """
+    pe, pb = get_pe_pb_from_fmp(ticker, api_key)
+    if np.isnan(pe) or np.isnan(pb):
+        pe2, pb2 = get_pe_pb_from_yfinance(ticker)
+        if np.isnan(pe):
+            pe = pe2
+        if np.isnan(pb):
+            pb = pb2
+    return pe, pb
+
+def make_constant_series(value, index, name):
+    """Helper: create a Series filled with the same value over given index."""
+    return pd.Series(value, index=index, name=name)
+
+def get_gross_spy_ratios(api_key: str, period="quarter", limit=100) -> pd.DataFrame:
+    url = f"https://financialmodelingprep.com/api/v3/ratios/SPY?period={period}&limit={limit}&apikey={api_key}"
+    data = requests.get(url).json()
+    if not isinstance(data, list) or not data:
+        logging.warning("No ratios data returned for SPY")
+        return pd.DataFrame()
+    df = pd.DataFrame(data)
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
+    return df[["priceEarningsRatioTTM", "priceToBookRatio"]]
+
+# ======== FMP & FRED PRICES, YIELDS, ETC ==========
+
+def get_price_series(ticker, api_key, start_date="2017-01-01"):
+    url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?from={start_date}&apikey={api_key}"
     resp = requests.get(url)
     data = resp.json()
+    if 'historical' not in data:
+        logging.warning(f"No price data found for {ticker}.")
+        return pd.Series(dtype=float, name=f"{ticker} Price")
     df = pd.DataFrame(data['historical'])
     df['date'] = pd.to_datetime(df['date'])
     df = df.set_index('date').sort_index()
     return df['close']
 
-def get_quarterly_eps_from_ratios(ticker, api_key):
-    """
-    Fetch quarterly TTM EPS from FMP's /ratios endpoint.
-    """
-    url = f"https://financialmodelingprep.com/api/v3/ratios/{ticker}?limit=100&apikey={api_key}"
-    resp = requests.get(url)
-    data = resp.json()
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.set_index('date').sort_index()
-    # Column is netIncomePerShareTTM, may need to check 'netIncomePerShareTTM' or 'netIncomePerShare'
-    if 'netIncomePerShareTTM' in df.columns:
-        return df['netIncomePerShareTTM']
-    else:
-        # fallback for older data structure
-        return df['netIncomePerShare']
+def fetch_fmp_data(ticker, api_key, start_date="2017-01-01"):
+    # Alias for get_price_series
+    return get_price_series(ticker, api_key, start_date)
 
-def construct_eps_ttm_series_from_fmp(ticker, price_index, api_key):
-    """
-    Forward-fills the latest known TTM EPS to each price date.
-    """
-    eps_q = get_quarterly_eps_from_ratios(ticker, api_key)
-    # Reindex to price index (daily) with forward fill
-    eps_daily = eps_q.reindex(price_index, method='ffill')
-    return eps_daily
+def get_hyg_lqd_spread(api_key, start_date="2017-01-01"):
+    hyg = get_price_series('HYG', api_key, start_date=start_date)
+    lqd = get_price_series('LQD', api_key, start_date=start_date)
+    common_idx = hyg.index.intersection(lqd.index)
+    if common_idx.empty:
+        return pd.Series(name='HYG-LQD Spread')
+    spread = hyg.loc[common_idx] - lqd.loc[common_idx]
+    spread.name = 'HYG-LQD Spread'
+    return spread
 
-def get_pe_series_from_fmp(ticker, api_key, years=5):
-    """
-    Returns a daily P/E time series for the given ticker (e.g., 'SPY').
-    """
-    try:
-        # Step 1: Get daily close prices
-        price = get_price_series(ticker, api_key, years=years)
-
-        # Step 2: Get quarterly EPS (trailing)
-        eps_q = get_quarterly_eps_from_ratios(ticker, api_key)
-        # Forward-fill EPS to each price date
-        eps_daily = eps_q.reindex(price.index, method='ffill')
-        
-        # Step 3: Calculate P/E (avoid div by 0)
-        pe = price / eps_daily
-        pe[eps_daily == 0] = None
-        pe.name = f"{ticker} P/E"
-        return pe
-    except Exception as e:
-        logging.error(f"Failed to fetch daily PE series for {ticker}: {e}")
-        return pd.Series(name=f"{ticker} P/E")
-
-
-
-# Fetch from FMP API
-def fetch_fmp_data(ticker, api_key):
-    session = requests.Session()
-    retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-    session.mount('https://', HTTPAdapter(max_retries=retries))
-    url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?apikey={api_key}"
-    response = session.get(url)
-    data = response.json()
-    if 'historical' in data:
-        df = pd.DataFrame(data['historical'])
-        df['date'] = pd.to_datetime(df['date'])
-        df.set_index('date', inplace=True)
-        return df['close']
-    else:
-        logging.error(f"No data for {ticker}")
-        return pd.Series()
-
-# Fetch from FRED API
-def fetch_fred_data(series_id, fred_api_key):
+def fetch_fred_data(series_id, fred_api_key, start_date=None, end_date=None, frequency='D'):
     fred = Fred(api_key=fred_api_key)
     try:
-        series = fred.get_series(series_id)
+        series = fred.get_series(series_id, observation_start=start_date, observation_end=end_date)
         series.index = pd.to_datetime(series.index)
-        return series
+        if frequency != 'D':
+            series = series.resample(frequency).last()
+        return series.sort_index()
     except Exception as e:
         logging.error(f"Could not fetch FRED series {series_id}: {e}")
-        return pd.Series()
+        return pd.Series(dtype=float, name=series_id)
 
-# Fetch all series
+# ======== MASTER DATA FETCHER ==========
+
+
+
+def get_fred_series(fred_api_key, start_date, series_map=None):
+    """
+    Fetches multiple FRED series as a dict of pandas Series, clipped to start_date.
+    :param fred_api_key: Your FRED API key (str)
+    :param start_date: Start date as 'YYYY-MM-DD' or datetime
+    :param series_map: dict {output_col: FRED_series_id}, e.g. {'VIX': 'VIXCLS'}
+    :return: dict {output_col: pd.Series}
+    """
+    fred = Fred(api_key=fred_api_key)
+    start_date = pd.to_datetime(start_date)
+
+    # Default mapping if none provided
+    if series_map is None:
+        series_map = {
+            'VXV': 'VXVCLS',
+            'VIX': 'VIXCLS',
+            'USD Overnight Rate': 'OBFR',
+            '3M T-Bill': 'DTB3',
+            '10Y Yield': 'DGS10',
+            '2Y Yield': 'DGS2',
+            'USD Index': 'DTWEXBGS',
+            'FRED RRP': 'RRPONTSYD',
+            'US Corp OAS': 'BAMLC0A0CM',
+            'US HY OAS': 'BAMLH0A0HYM2'
+        }
+
+    result = {}
+    for out_col, fred_id in series_map.items():
+        try:
+            s = fred.get_series(fred_id)
+            s.index = pd.to_datetime(s.index)
+            s = s[s.index >= start_date]
+            s.name = out_col
+            result[out_col] = s
+        except Exception as e:
+            logging.warning(f"Could not fetch FRED series {fred_id} for {out_col}: {e}")
+            result[out_col] = pd.Series(dtype=float, name=out_col)
+
+    return result
+
 def get_all_series(config):
     fred_api_key = config['data']['fred_api_key']
     fmp_api_key = config['data']['fmp_api_key']
     start_date = pd.to_datetime(config['data']['start_date'])
+    start_date_str = str(start_date.date())
 
     data = {}
 
-    # --- Volatility Metrics ---
-    data['VIX'] = fetch_fmp_data('^VIX', fmp_api_key)
-    data['MOVE Index'] = fetch_fmp_data('^MOVE', fmp_api_key)
+    # --- Fetch all FRED time series at once (as a dict of Series) ---
+    fred_data = get_fred_series(fred_api_key, start_date)
+    data.update(fred_data)
 
-    # --- Safe-Haven Assets & Prices ---
-    data['USD Index (DXY)'] = fetch_fmp_data('DX-Y.NYB', fmp_api_key)
-    data['Gold Price'] = fetch_fmp_data('GC=F', fmp_api_key)
-    data['US 10Y Treasury Yield'] = fetch_fred_data('GS10', fred_api_key)
+    # --- Add FMP or other data ---
+    data['MOVE Index'] = fetch_fmp_data('^MOVE', fmp_api_key, start_date=start_date_str)
+    data['Gold Price'] = fetch_fmp_data('GC=F', fmp_api_key, start_date=start_date_str)
+    data['USD Index (DXY)'] = fetch_fmp_data('DX-Y.NYB', fmp_api_key, start_date=start_date_str)
+    data['HYG-LQD Spread'] = get_hyg_lqd_spread(fmp_api_key, start_date=start_date_str)
 
-    # --- Funding & Liquidity ---
-    data['USD Overnight Rate'] = fetch_fred_data('EFFR', fred_api_key)
-    data['FRED RRP Volume'] = fetch_fred_data('RRPONTSYD', fred_api_key)
-    data['3M T-Bill Yield'] = fetch_fred_data('DTB3', fred_api_key)
-    data['SOFR 90 avg'] = fetch_fred_data('SOFR90DAYAVG', fred_api_key)
-    data['TED Spread'] = data['SOFR 90 avg'] - data['3M T-Bill Yield']
+    # --- Example spreads using FRED data already loaded ---
+    if '10Y Yield' in data and '2Y Yield' in data:
+        data['10Y-2Y Slope'] = data['10Y Yield'] - data['2Y Yield']
+    if '10Y Yield' in data and '3M T-Bill' in data:
+        data['10Y-3M Slope'] = data['10Y Yield'] - data['3M T-Bill']
 
-    # --- Valuation Indicator ---
-    # data['S&P 500 Price'] = fetch_fmp_data('^SPX', fmp_api_key)
-    # sp500_earnings = fetch_fred_data('SPEARN', fred_api_key)
-    # data['S&P 500 Earnings'] = sp500_earnings
-    # data['S&P 500 P/E Ratio'] = data['S&P 500 Price'] / sp500_earnings
-
-    data['SPY P/E'] = get_pe_series_from_fmp('SPY', fmp_api_key, years=5)
-
-    # --- Credit & OAS ---
-    data['US IG OAS'] = fetch_fred_data('BAMLC0A0CM', fred_api_key)
-    data['US HY OAS'] = fetch_fred_data('BAMLH0A0HYM2', fred_api_key)
-
-    # --- Yield Curve Structure ---
-    data['1Y Treasury Yield'] = fetch_fred_data('GS1', fred_api_key)
-    data['2Y Treasury Yield'] = fetch_fred_data('GS2', fred_api_key)
-    data['10Y-2Y Slope'] = data['US 10Y Treasury Yield'] - data['2Y Treasury Yield']
-    data['10Y-3M Slope'] = data['US 10Y Treasury Yield'] - data['3M T-Bill Yield']
-
-    # Convert dictionary to DataFrame
+    # --- Combine all into DataFrame, filter to start_date ---
     df_final = pd.concat(data, axis=1)
-
-    # Filter based on start_date
     df_final = df_final[df_final.index >= start_date].sort_index()
 
     return df_final
-
-
-

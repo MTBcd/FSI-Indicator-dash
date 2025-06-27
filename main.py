@@ -2,6 +2,7 @@
 import logging
 import pandas as pd
 import configparser
+import numpy as np
 import logging
 from data_fetching import get_all_series
 # from data_fetching import get_ibkr_series, get_fred_series, load_extended_csv_data, scrape_investing_data
@@ -29,25 +30,42 @@ def load_configuration(config_file='config.ini'):
 
 def merge_data(config):
     try:
+        # --- 1. Fetch initial raw data ---
         df = get_all_series(config)
-
         if df.empty:
-            logging.error("Merged data is empty.")
+            logging.error("Merged data is empty right after fetching. Exiting.")
             return None
 
         base_path = config['data']['csv_base_path']
         df.to_csv(f"{base_path}\\Full_set_variables_brut.csv")
 
-        # Align to latest first-valid date and cleaning
+        logging.info(f"Initial columns: {list(df.columns)}")
+        logging.info(f"Initial shape: {df.shape}")
+
+        # --- 2. Align to the latest first-valid date ---
         first_valid_dates = df.apply(lambda col: col.first_valid_index())
         cutoff_date = max(first_valid_dates)
+        logging.info(f"Latest first-valid date across columns: {cutoff_date}")
         df = df[df.index >= cutoff_date]
+        logging.info(f"Shape after aligning to cutoff date: {df.shape}")
 
+        # --- 3. Forward/backward fill, drop columns with too much missing ---
         df = df.ffill().bfill()
+        pre_dropna_shape = df.shape
         df = df.dropna(axis=1, thresh=int(0.9 * len(df)))
-        df = df.dropna()
+        dropped_cols = set(df.columns) ^ set(df.columns)
+        logging.info(f"Dropped {pre_dropna_shape[1] - df.shape[1]} columns with >10% NaN. Shape now: {df.shape}")
 
-        # === Feature Engineering ===
+        # --- 4. Final drop of any remaining NaN rows ---
+        df = df.dropna()
+        logging.info(f"Shape after dropping remaining NaN rows: {df.shape}")
+
+        # --- 5. Defensive check for empty or too-narrow dataframe ---
+        if df.empty or df.shape[1] < 2:
+            logging.error(f"Final cleaned dataset is empty or too narrow for SVD. Columns: {df.columns.tolist()}")
+            return None
+
+        # === 6. Feature Engineering ===
         windows = [int(w) for w in config['fsi']['windows'].split(',')]
 
         for window in windows:
@@ -56,7 +74,13 @@ def merge_data(config):
                 df[f'VIX_dev_{window}'] = moving_average_deviation(df['VIX'], window)
             if 'MOVE Index' in df.columns:
                 df[f'MOVE_dev_{window}'] = moving_average_deviation(df['MOVE Index'], window)
-            
+            if 'OVX' in df.columns:
+                df[f'OVX_dev_{window}'] = moving_average_deviation(df['OVX'], window)
+            if 'VXV' in df.columns:
+                df[f'VXV_dev_{window}'] = moving_average_deviation(df['VXV'], window)
+            if 'VIX-VXV Spread' in df.columns:
+                df[f'VIX_VXV_spread_dev_{window}'] = moving_average_deviation(df['VIX-VXV Spread'], window)
+
             # --- Safe-Haven / FX ---
             if 'USD Index (DXY)' in df.columns:
                 df[f'USD_stress_{window}'] = moving_average_deviation(df['USD Index (DXY)'], window, invert=True)
@@ -78,17 +102,15 @@ def merge_data(config):
                 df[f'IG_OAS_dev_{window}'] = absolute_deviation(df['US IG OAS'], window)
             if 'US HY OAS' in df.columns:
                 df[f'HY_OAS_dev_{window}'] = absolute_deviation(df['US HY OAS'], window)
-            
+            if 'HYG-LQD Spread' in df.columns:
+                df[f'HY_IG_spread_{window}'] = moving_average_deviation(df['HYG-LQD Spread'], window)
+
             # --- Funding & Liquidity ---
             if 'USD Overnight Rate' in df.columns:
                 df[f'USDO_rate_dev_{window}'] = moving_average_deviation(df['USD Overnight Rate'], window, invert=True)
             if 'FRED RRP Volume' in df.columns:
                 df[f'Fed_RRP_stress_{window}'] = absolute_deviation(df['FRED RRP Volume'], window, invert=True)
-            if 'SOFR 90 avg' in df.columns:
-                df[f'SOFR_dev_{window}'] = absolute_deviation(df['SOFR 90 avg'], window)
-            if 'TED Spread' in df.columns:
-                df[f'TED_spread_dev_{window}'] = absolute_deviation(df['TED Spread'], window)
-            
+
             # --- Slope & Spreads ---
             if '10Y-2Y Slope' in df.columns:
                 df[f'10Y_2Y_slope_dev_{window}'] = absolute_deviation(df['10Y-2Y Slope'], window, invert=True)
@@ -96,27 +118,44 @@ def merge_data(config):
                 df[f'10Y_3M_slope_dev_{window}'] = absolute_deviation(df['10Y-3M Slope'], window, invert=True)
 
             # --- Valuation ---
-            if 'SPY P/E' in df.columns: # and 'S&P 500 Earnings' in df.columns:
-                # Already computed as S&P 500 P/E Ratio, but you can add rolling deviation if desired
+            if 'SPY P/E' in df.columns:
                 df[f'SPY_PE_dev_{window}'] = moving_average_deviation(df['SPY P/E'], window)
-        
-        # --- Drop raw columns to keep only engineered features ---
-        df.drop([
-            'VIX', 'MOVE Index', 'USD Index (DXY)', 'Gold Price',
-            'US 10Y Treasury Yield', 'USD Overnight Rate', 'FRED RRP Volume',
-            '3M T-Bill Yield', 'SOFR 90 avg',
-            'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield',
-            'TED Spread', 'SPY P/E', '10Y-2Y Slope', '10Y-3M Slope'
-        ], axis=1, inplace=True, errors='ignore')
+            if 'SPY P/B' in df.columns:
+                df[f'SPY_PB_dev_{window}'] = moving_average_deviation(df['SPY P/B'], window)
 
+        # --- 7. Drop raw columns to keep only engineered features ---
+        raw_cols = [
+            'VIX', 'MOVE Index', 'USD Index (DXY)', 'Gold Price',
+            'US 10Y Treasury Yield', 'USD Overnight Rate', 'FRED RRP Volume', '3M T-Bill Yield',
+            'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield', 
+            'SPY P/E', '10Y-2Y Slope', '10Y-3M Slope',
+            'HYG-LQD Spread', 'SPY P/B', 'OVX', 'VXV', 'VIX-VXV Spread'
+        ]
+        df.drop(raw_cols, axis=1, inplace=True, errors='ignore')
+
+        logging.info(f"Shape after dropping raw columns: {df.shape}")
+        if df.empty or df.shape[1] < 2:
+            logging.error(f"Final engineered dataset is empty or too narrow for SVD. Columns: {df.columns.tolist()}")
+            return None
+
+        # --- 8. Final NaN drop (should be minimal) ---
+        df = df.dropna()
+        logging.info(f"Shape after final dropna: {df.shape}")
+
+        if df.empty or df.shape[1] < 2:
+            logging.error(f"Final processed dataset is empty or too narrow for SVD. Columns: {df.columns.tolist()}")
+            return None
+
+        # --- 9. Save and return ---
         df.to_csv(f"{base_path}\\Full_set_variables_std.csv")
-        logging.info("Final merged and processed dataset.")
+        logging.info("Final merged and processed dataset saved and ready.")
 
         return df
 
     except Exception as e:
         logging.error(f"Error merging data: {e}", exc_info=True)
         return None
+
 
 
 
@@ -246,11 +285,11 @@ def main():
     # }
 
     group_map = {
-    'Volatility': ['VIX_dev', 'MOVE_dev'],  # Add more if needed
-    'Rates': ['10Y_rate', '1Y_rate', '2Y_rate', '10Y_2Y_slope_dev', '10Y_3M_slope_dev', 'USDO_rate_dev'],
-    'Funding': ['USD_stress', '3M_TBill_stress', 'Fed_RRP_stress', 'SOFR_dev', 'TED_spread_dev'],
-    'Credit': ['IG_OAS_dev', 'HY_OAS_dev'],
-    'Valuation': ['SPX_PE_dev',],  # If you keep this
+        'Volatility': ['VIX_dev', 'MOVE_dev', 'OVX_dev', 'VXV_dev', 'VIX_VXV_spread_dev'],
+        'Rates': ['10Y_rate', '1Y_rate', '2Y_rate', '10Y_2Y_slope_dev', '10Y_3M_slope_dev', 'USDO_rate_dev'],
+        'Funding': ['USD_stress', '3M_TBill_stress', 'Fed_RRP_stress',],
+        'Credit': ['IG_OAS_dev', 'HY_OAS_dev', 'HY_IG_spread'],
+        'Valuation': ['SPY_PE_dev', 'SPY_PB_dev'],
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
 
