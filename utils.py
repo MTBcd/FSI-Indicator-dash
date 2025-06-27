@@ -10,7 +10,8 @@ from sklearn.metrics import classification_report
 from xgboost import XGBClassifier
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.impute import IterativeImputer
+from sklearn.linear_model import BayesianRidge
 
 def normalize_loadings(weights):
     """Normalize the loadings vector."""
@@ -116,6 +117,11 @@ def smart_impute(series):
     except Exception as e:
         logging.error(f"Error imputing data: {e}", exc_info=True)
         return pd.Series(index=series.index, data=np.nan)
+
+def impute_data(df):
+    imputer = IterativeImputer(random_state=42, max_iter=10, estimator=BayesianRidge())
+    df_imputed = pd.DataFrame(imputer.fit_transform(df), index=df.index, columns=df.columns)
+    return df_imputed
 
 def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.9, simplify_to_3=False):
     """

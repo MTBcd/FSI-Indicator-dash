@@ -258,15 +258,10 @@
 
 
 
-
-
 # data_fetching.py
-# data_fetching.py
-
 import pandas as pd
 import numpy as np
 import requests
-import yfinance as yf
 import logging
 from fredapi import Fred
 import configparser
@@ -276,93 +271,25 @@ import configparser
 config = configparser.ConfigParser()
 config.read('config.ini')
 
-# ======== UNIVERSAL SPY P/E AND P/B FETCHER ==========
-
-def get_pe_pb_from_fmp(ticker: str, api_key: str) -> tuple[float, float]:
-    """
-    Try to get TTM P/E and P/B from FMP ratios-ttm endpoint for a ticker.
-    Returns (pe, pb) as floats or (np.nan, np.nan) if unavailable.
-    """
-    url = f"https://financialmodelingprep.com/api/v3/ratios-ttm/{ticker}?apikey={api_key}"
-    try:
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
-        if isinstance(data, list) and len(data) > 0:
-            record = data[0]
-            pe = record.get("priceEarningsRatioTTM") or record.get("priceToEarningsRatioTTM") or np.nan
-            pb = record.get("priceToBookRatioTTM") or record.get("priceToBookRatio") or np.nan
-            if pe is not None and pe > 0:
-                pe = float(pe)
-            else:
-                pe = np.nan
-            if pb is not None and pb > 0:
-                pb = float(pb)
-            else:
-                pb = np.nan
-            return pe, pb
-    except Exception as e:
-        logging.warning(f"FMP request failed: {e}")
-    return np.nan, np.nan
-
-def get_pe_pb_from_yfinance(ticker: str) -> tuple[float, float]:
-    """
-    Get trailing P/E and P/B from Yahoo Finance via yfinance library.
-    """
-    try:
-        data = yf.Ticker(ticker).info
-        pe = data.get("trailingPE", np.nan)
-        pb = data.get("priceToBook", np.nan)
-        return float(pe) if pe is not None else np.nan, float(pb) if pb is not None else np.nan
-    except Exception as e:
-        logging.warning(f"yfinance request failed: {e}")
-        return np.nan, np.nan
-
-def get_current_pe_pb(ticker: str, api_key: str) -> tuple[float, float]:
-    """
-    Always returns valid (pe, pb) for any ticker (ETF or stock),
-    using FMP first, then Yahoo fallback.
-    """
-    pe, pb = get_pe_pb_from_fmp(ticker, api_key)
-    if np.isnan(pe) or np.isnan(pb):
-        pe2, pb2 = get_pe_pb_from_yfinance(ticker)
-        if np.isnan(pe):
-            pe = pe2
-        if np.isnan(pb):
-            pb = pb2
-    return pe, pb
-
-def make_constant_series(value, index, name):
-    """Helper: create a Series filled with the same value over given index."""
-    return pd.Series(value, index=index, name=name)
-
-def get_gross_spy_ratios(api_key: str, period="quarter", limit=100) -> pd.DataFrame:
-    url = f"https://financialmodelingprep.com/api/v3/ratios/SPY?period={period}&limit={limit}&apikey={api_key}"
-    data = requests.get(url).json()
-    if not isinstance(data, list) or not data:
-        logging.warning("No ratios data returned for SPY")
-        return pd.DataFrame()
-    df = pd.DataFrame(data)
-    if "date" in df.columns:
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.set_index("date").sort_index()
-    return df[["priceEarningsRatioTTM", "priceToBookRatio"]]
-
-# ======== FMP & FRED PRICES, YIELDS, ETC ==========
+# ======== FMP PRICE DATA ==========
 
 def get_price_series(ticker, api_key, start_date="2017-01-01"):
     url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?from={start_date}&apikey={api_key}"
-    resp = requests.get(url)
-    data = resp.json()
-    if 'historical' not in data:
-        logging.warning(f"No price data found for {ticker}.")
+    try:
+        resp = requests.get(url)
+        data = resp.json()
+        if 'historical' not in data:
+            logging.warning(f"No price data found for {ticker}.")
+            return pd.Series(dtype=float, name=f"{ticker} Price")
+        df = pd.DataFrame(data['historical'])
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date').sort_index()
+        return df['close']
+    except Exception as e:
+        logging.error(f"Error fetching FMP price data for {ticker}: {e}")
         return pd.Series(dtype=float, name=f"{ticker} Price")
-    df = pd.DataFrame(data['historical'])
-    df['date'] = pd.to_datetime(df['date'])
-    df = df.set_index('date').sort_index()
-    return df['close']
 
 def fetch_fmp_data(ticker, api_key, start_date="2017-01-01"):
-    # Alias for get_price_series
     return get_price_series(ticker, api_key, start_date)
 
 def get_hyg_lqd_spread(api_key, start_date="2017-01-01"):
@@ -375,34 +302,18 @@ def get_hyg_lqd_spread(api_key, start_date="2017-01-01"):
     spread.name = 'HYG-LQD Spread'
     return spread
 
-def fetch_fred_data(series_id, fred_api_key, start_date=None, end_date=None, frequency='D'):
-    fred = Fred(api_key=fred_api_key)
-    try:
-        series = fred.get_series(series_id, observation_start=start_date, observation_end=end_date)
-        series.index = pd.to_datetime(series.index)
-        if frequency != 'D':
-            series = series.resample(frequency).last()
-        return series.sort_index()
-    except Exception as e:
-        logging.error(f"Could not fetch FRED series {series_id}: {e}")
-        return pd.Series(dtype=float, name=series_id)
-
-# ======== MASTER DATA FETCHER ==========
-
-
+# ======== FRED MULTI-SERIES FETCHER ==========
 
 def get_fred_series(fred_api_key, start_date, series_map=None):
     """
     Fetches multiple FRED series as a dict of pandas Series, clipped to start_date.
     :param fred_api_key: Your FRED API key (str)
     :param start_date: Start date as 'YYYY-MM-DD' or datetime
-    :param series_map: dict {output_col: FRED_series_id}, e.g. {'VIX': 'VIXCLS'}
+    :param series_map: dict {output_col: FRED_series_id}
     :return: dict {output_col: pd.Series}
     """
     fred = Fred(api_key=fred_api_key)
     start_date = pd.to_datetime(start_date)
-
-    # Default mapping if none provided
     if series_map is None:
         series_map = {
             'VXV': 'VXVCLS',
@@ -416,7 +327,6 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
             'US Corp OAS': 'BAMLC0A0CM',
             'US HY OAS': 'BAMLH0A0HYM2'
         }
-
     result = {}
     for out_col, fred_id in series_map.items():
         try:
@@ -428,8 +338,9 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
         except Exception as e:
             logging.warning(f"Could not fetch FRED series {fred_id} for {out_col}: {e}")
             result[out_col] = pd.Series(dtype=float, name=out_col)
-
     return result
+
+# ======== MASTER DATA FETCHER ==========
 
 def get_all_series(config):
     fred_api_key = config['data']['fred_api_key']
@@ -439,7 +350,7 @@ def get_all_series(config):
 
     data = {}
 
-    # --- Fetch all FRED time series at once (as a dict of Series) ---
+    # --- Fetch all FRED time series at once ---
     fred_data = get_fred_series(fred_api_key, start_date)
     data.update(fred_data)
 

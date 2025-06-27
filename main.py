@@ -50,10 +50,11 @@ def merge_data(config):
 
         # --- 3. Forward/backward fill, drop columns with too much missing ---
         df = df.ffill().bfill()
-        pre_dropna_shape = df.shape
+        cols_before_drop = set(df.columns)
         df = df.dropna(axis=1, thresh=int(0.9 * len(df)))
-        dropped_cols = set(df.columns) ^ set(df.columns)
-        logging.info(f"Dropped {pre_dropna_shape[1] - df.shape[1]} columns with >10% NaN. Shape now: {df.shape}")
+        cols_after_drop = set(df.columns)
+        dropped_cols = cols_before_drop - cols_after_drop
+        logging.info(f"Dropped {dropped_cols} columns with >10% NaN. Shape now: {df.shape}")
 
         # --- 4. Final drop of any remaining NaN rows ---
         df = df.dropna()
@@ -117,10 +118,10 @@ def merge_data(config):
                 df[f'10Y_3M_slope_dev_{window}'] = absolute_deviation(df['10Y-3M Slope'], window, invert=True)
 
             # --- Valuation ---
-            if 'SPY P/E' in df.columns:
-                df[f'SPY_PE_dev_{window}'] = moving_average_deviation(df['SPY P/E'], window)
-            if 'SPY P/B' in df.columns:
-                df[f'SPY_PB_dev_{window}'] = moving_average_deviation(df['SPY P/B'], window)
+            # if 'SPY P/E' in df.columns:
+            #     df[f'SPY_PE_dev_{window}'] = moving_average_deviation(df['SPY P/E'], window)
+            # if 'SPY P/B' in df.columns:
+            #     df[f'SPY_PB_dev_{window}'] = moving_average_deviation(df['SPY P/B'], window)
 
         # --- 7. Drop raw columns to keep only engineered features ---
         raw_cols = [
@@ -288,7 +289,7 @@ def main():
         'Rates': ['10Y_rate', '1Y_rate', '2Y_rate', '10Y_2Y_slope_dev', '10Y_3M_slope_dev', 'USDO_rate_dev'],
         'Funding': ['USD_stress', '3M_TBill_stress', 'Fed_RRP_stress',],
         'Credit': ['IG_OAS_dev', 'HY_OAS_dev', 'HY_IG_spread'],
-        'Valuation': ['SPY_PE_dev', 'SPY_PB_dev'],
+        # 'Valuation': ['SPY_PE_dev', 'SPY_PB_dev'],
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
 
