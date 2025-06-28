@@ -88,13 +88,6 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
             row=row, col=col
         )
 
-# def fix_axis_minus(fig, y_min, y_max, n_ticks=5):
-#     """Fix the display of minus signs on the y-axis."""
-#     import numpy as np
-#     tick_vals = np.linspace(y_min, y_max, n_ticks)
-#     tick_texts = [f"{v:.2f}".replace("\u2212", "-") for v in tick_vals]
-#     fig.update_yaxes(tickvals=tick_vals, ticktext=tick_texts, tickfont=dict(family="Arial", size=12))
-
 
 def fix_axis_minus(fig, y_min, y_max, n_ticks=5):
     """Fix the display of minus signs on the y-axis."""
@@ -497,90 +490,6 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         return None
 
 
-# def save_fsi_charts_to_html(fsi_series, omega_df, stability_series, contribs, contribs_by_group, pnl_df, output_path="fsi_analysis.html"):
-#     """Save all FSI-related charts to a single HTML file."""
-#     try:
-#         import plotly.io as pio
-#         from plotly.subplots import make_subplots
-#         import plotly.graph_objects as go
-
-#         # === Create individual figures ===
-#         # 1. FSI Time Series
-#         fig_fsi = go.Figure(data=[go.Scatter(x=fsi_series.index, y=fsi_series.values, mode='lines')])
-#         fig_fsi.update_layout(title="FSI Time Series", xaxis_title="Date", yaxis_title="FSI Value")
-
-#         # 2. Omega (Loadings) Chart
-#         fig_omega = go.Figure()
-#         for col in omega_df.columns:
-#             fig_omega.add_trace(go.Scatter(x=omega_df.index, y=omega_df[col], mode='lines', name=col))
-#         fig_omega.update_layout(title="Omega (Loadings) Over Time", xaxis_title="Date", yaxis_title="Loading Value")
-
-#         # 3. Stability Series
-#         fig_stability = go.Figure(data=[go.Scatter(x=stability_series.index, y=stability_series.values, mode='lines')])
-#         fig_stability.update_layout(title="Omega Stability (Cosine Similarity)", xaxis_title="Date", yaxis_title="Cosine Similarity")
-
-#         # 4. Variable Contributions (if available)
-#         if not contribs.empty:
-#             # Take the last 200 rows for visualization
-#             contribs_subset = contribs.tail(200)
-#             fig_contrib = go.Figure()
-#             for col in contribs_subset.columns:
-#                 if col != 'FSI':
-#                     fig_contrib.add_trace(go.Scatter(x=contribs_subset.index, y=contribs_subset[col], mode='lines', name=col))
-#             fig_contrib.update_layout(title="Variable Contributions to FSI (Last 200 Days)", xaxis_title="Date", yaxis_title="Contribution")
-#         else:
-#             fig_contrib = None
-
-#         # 5. Grouped Contributions Chart
-#         fig_grouped_contrib = plot_grouped_contributions(contribs_by_group)
-
-#         # 6. PnL with Regime Ribbons
-#         fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series)
-
-#         # === Create Subplots ===
-#         n_rows = 3 if fig_contrib else 2
-#         fig = make_subplots(
-#             rows=n_rows, cols=2,
-#             subplot_titles=(
-#                 "FSI Time Series", "Omega Stability (Cosine Similarity)",
-#                 "Omega (Loadings) Over Time", "FSI Group-Level Contributions with Transition Proximity",
-#                 "Variable Contributions to FSI (Last 200 Days)", "PnL Scatter Plot with FSI Regimes"
-#             ) if fig_contrib else (
-#                 "FSI Time Series", "Omega Stability (Cosine Similarity)",
-#                 "Omega (Loadings) Over Time", "FSI Group-Level Contributions with Transition Proximity",
-#                 "PnL Scatter Plot with FSI Regimes", ""
-#             )
-#         )
-
-#         # Add traces to subplots
-#         fig.add_trace(fig_fsi.data[0], row=1, col=1)
-#         fig.add_trace(fig_stability.data[0], row=1, col=2)
-
-#         for trace in fig_omega.data:
-#             fig.add_trace(trace, row=2, col=1)
-
-#         if fig_grouped_contrib:
-#             for trace in fig_grouped_contrib.data:
-#                 fig.add_trace(trace, row=2, col=2)
-
-#         if fig_contrib:
-#             for trace in fig_contrib.data:
-#                 fig.add_trace(trace, row=3, col=1)
-
-#         if fig_pnl:
-#             for trace in fig_pnl.data:
-#                 fig.add_trace(trace, row=3, col=2)
-#         else:
-#             print("PNL Plot is none")
-
-#         fig.update_layout(height=1800, width=1500, title_text="FSI Analysis Charts", template="plotly_white")
-
-#         # === Save to HTML ===
-#         pio.write_html(fig, file=output_path, auto_open=False)
-#         print(f"FSI charts saved to {output_path}")
-
-#     except Exception as e:
-#         logging.error(f"Error saving FSI charts to HTML: {e}", exc_info=True)
 
 def save_fsi_charts_to_html(fig1, fig2, fig3=None, filename="fsi_combined_report.html"):
     with open(filename, "w") as f:
