@@ -206,26 +206,13 @@ def main():
 
     # === Group attribution ===
     logging.info("Aggregating and plotting group-level contributions...")
-    # group_map = {
-    #     'Volatility': ['VIX_dev', 'VXV_dev', 'OVX_dev', 'GVZ_dev'],
-    #     'Rates': ['10Y_rate', '1Y_rate', 'Yield_slope', 'USDO_rate_dev'],
-    #     'Funding': ['USD_stress', '3M_TBill_stress', 'Fed_RRP_stress'],
-    #     'Credit': ['Credit_spread', 'Corp_OAS_dev', 'HY_OAS_dev'],
-    # }
-
-    # group_map = {
-    #     'Volatility': ['VIX_dev', 'MOVE_dev', 'OVX_dev', 'VIX_VXV_spread_dev'], #, 'VXV_dev'
-    #     'Rates': ['10Y_rate', '2Y_rate', '10Y_2Y_slope_dev', 'USDO_rate_dev'], #, '1Y_rate', '10Y_3M_slope_dev'
-    #     'Funding': ['USD_stress', '3M_TBill_stress', 'Fed_RRP_stress',],
-    #     'Credit': ['IG_OAS_dev', 'HY_OAS_dev', 'HY_IG_spread'],
-    #     # 'Valuation': ['SPY_PE_dev', 'SPY_PB_dev'],
-    # }
 
     group_map = {
-        'Volatility': ['VIX_dev_250', 'MOVE_dev_250', 'OVX_dev_250', 'VIX_VXV_spread_dev_250'],
-        'Rates': ['10Y_rate_250', '2Y_rate_250', '10Y_2Y_slope_dev_250', 'USDO_rate_dev_250'],
-        'Funding': ['USD_stress_250', '3M_TBill_stress_250', 'Fed_RRP_stress_250'],
+        'Volatility': ['VIX_dev_250', 'MOVE_dev_250', 'OVX_dev_250', 'VXV_dev_250', 'VIX_VXV_spread_dev_250'],
+        'Rates': ['10Y_rate_250', '2Y_rate_250', '10Y_2Y_slope_dev_250', '10Y_3M_slope_dev_250', 'USDO_rate_dev_250'],
+        'Funding': ['USD_stress_250', '3M_TBill_stress_250', 'Fed_RRP_stress_250', 'FRED_RRP_stress_250'],
         'Credit': ['IG_OAS_dev_250', 'HY_OAS_dev_250', 'HY_IG_spread_250'],
+        'Safe_Haven': ['Gold_dev_250']
     }
 
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)

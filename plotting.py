@@ -124,7 +124,7 @@ def plot_group_contributions_with_regime(contribs_by_group):
             ), row=1, col=1)
 
         # Add FSI line
-        fig.add_trace(go.Scatter(
+        fig.add_trace(go.Scattergl(
             x=contribs_by_group.index,
             y=fsi,
             name='FSI (Total)',
@@ -134,7 +134,7 @@ def plot_group_contributions_with_regime(contribs_by_group):
         ), row=1, col=1)
 
         # === Bottom Plot: Transition Proximity ===
-        fig.add_trace(go.Scatter(
+        fig.add_trace(go.Scattergl(
             x=contribs_by_group.index,
             y=smooth_weight,
             name='Transition Proximity',
@@ -249,7 +249,7 @@ def plot_grouped_contributions(contribs_by_group):
             ), row=1, col=1)
 
         # FSI Line
-        fig.add_trace(go.Scatter(
+        fig.add_trace(go.Scattergl(
             x=contribs_by_group.index,
             y=fsi,
             name='FSI (Total)',
@@ -259,7 +259,7 @@ def plot_grouped_contributions(contribs_by_group):
         ), row=1, col=1)
 
         # === Bottom Plot: Transition Proximity ===
-        fig.add_trace(go.Scatter(
+        fig.add_trace(go.Scattergl(
             x=contribs_by_group.index,
             y=smooth_weight,
             name='Transition Proximity',
@@ -369,7 +369,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
 
         # Add PnL scatter
         fig.add_trace(
-            go.Scatter(
+            go.Scattergl(
                 x=pnl_series.index,
                 y=pnl_series.values,
                 mode='markers',
