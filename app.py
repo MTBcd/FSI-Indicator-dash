@@ -345,22 +345,19 @@ app.layout = html.Div([
 )
 def run_full_pipeline(n_clicks):
     cache_key = "fsi_analysis_latest"
-    # Disable button immediately
-    msg = "⏳ Analysis running, please wait..."
-    yield dash.no_update, msg, True
-    # Try cache
+    # Try cache first
     result = cache.get(cache_key)
     if result is not None:
         msg = f"✅ Served from cache (last computed at {result.get('timestamp', 'unknown')})"
-        # Re-enable button
-        yield result, msg, False
-        return
-    # If not cached, run full pipeline
+        return result, msg, False
+
+    # If not cached, run pipeline
+    msg = "⏳ Analysis running, please wait..."
     config = load_configuration()
     df = merge_data(config)
     if df is None:
-        yield dash.no_update, "❌ Data loading failed", False
-        return
+        return dash.no_update, "❌ Data loading failed", False
+
     fsi_series, omega_history, _, _ = estimate_fsi_recursive_rolling_with_stability(
         df,
         window_size=int(config['fsi']['window_size']),
@@ -377,7 +374,6 @@ def run_full_pipeline(n_clicks):
         'Safe_Haven': ['Gold_dev_250']
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
-    # Store everything as JSON for Dash
     result = {
         "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
         "variable_contribs": variable_contribs.to_json(date_format="iso", orient="split"),
@@ -387,7 +383,7 @@ def run_full_pipeline(n_clicks):
     }
     cache.set(cache_key, result, expire=3600)
     msg = f"✅ Analysis completed and cached at {result['timestamp']}"
-    yield result, msg, False
+    return result, msg, False
 
 # --- 2. Update Main Charts/Stats When Data Is Available ---
 @app.callback(
