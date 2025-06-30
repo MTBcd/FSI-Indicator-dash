@@ -1,43 +1,57 @@
-# main.py
-import logging
-import pandas as pd
-import configparser
-import logging
-import numpy as np
-import os
-import time
-from data_fetching import get_all_series
-# from data_fetching import get_ibkr_series, get_fred_series, load_extended_csv_data, scrape_investing_data
-from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
-from plotting import (
-    plot_group_contributions_with_regime, plot_grouped_contributions,
-    plot_pnl_with_regime_ribbons, save_fsi_charts_to_html
-)
-from utils import (
-    aggregate_contributions_by_group, smooth_transition_regime, regime_from_smooth_weight,
-    moving_average_deviation, absolute_deviation_rotated, absolute_deviation,
-    classify_risk_regime_hybrid
-)
+# # main.py
+# import logging
+# import pandas as pd
+# import configparser
+# import logging
+# import numpy as np
+# import os
+# import time
+# from data_fetching import get_all_series
+# # from data_fetching import get_ibkr_series, get_fred_series, load_extended_csv_data, scrape_investing_data
+# from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
+# from plotting import (
+#     plot_group_contributions_with_regime, plot_grouped_contributions,
+#     plot_pnl_with_regime_ribbons, save_fsi_charts_to_html
+# )
+# from utils import (
+#     aggregate_contributions_by_group, smooth_transition_regime, regime_from_smooth_weight,
+#     moving_average_deviation, absolute_deviation_rotated, absolute_deviation,
+#     classify_risk_regime_hybrid
+# )
 
-# # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# # # Set up logging
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_configuration(config_file='config.ini'):
-    """Load configuration from a .ini file."""
-    config = configparser.ConfigParser()
-    config.read(config_file)
-    return config
+# def load_configuration(config_file='config.ini'):
+#     """Load configuration from a .ini file."""
+#     config = configparser.ConfigParser()
+#     config.read(config_file)
+#     return config
 
 
-# def merge_data(config):
+# def merge_data(config, max_age_hours=12):
+#     """
+#     Loads processed data from cache if recent, otherwise runs full pipeline and caches result.
+#     """
+#     base_path = config['data']['csv_base_path']
+#     cache_path = os.path.join(base_path, "fsi_data_latest.parquet")
+
 #     try:
+#         # --- 0. Use cache if recent ---
+#         if os.path.exists(cache_path):
+#             file_age = (time.time() - os.path.getmtime(cache_path)) / 3600.0
+#             if file_age < max_age_hours:
+#                 logging.info(f"[merge_data] Loading cached data ({cache_path}), age: {file_age:.2f} hours")
+#                 return pd.read_parquet(cache_path)
+#             else:
+#                 logging.info(f"[merge_data] Cache too old ({file_age:.1f}h > {max_age_hours}h), refetching.")
+
 #         # --- 1. Fetch initial raw data ---
 #         df = get_all_series(config)
 #         if df.empty:
 #             logging.error("Merged data is empty right after fetching. Exiting.")
 #             return None
 
-#         base_path = config['data']['csv_base_path']
 #         df.to_csv(f"{base_path}\\Full_set_variables_brut.csv")
 
 #         logging.info(f"Initial columns: {list(df.columns)}")
@@ -151,9 +165,10 @@ def load_configuration(config_file='config.ini'):
 #             logging.error(f"Final processed dataset is empty or too narrow for SVD. Columns: {df.columns.tolist()}")
 #             return None
 
-#         # --- 9. Save and return ---
+#         # --- 9. Save as CSV and cache as Parquet ---
 #         df.to_csv(f"{base_path}\\Full_set_variables_std.csv")
-#         logging.info("Final merged and processed dataset saved and ready.")
+#         df.to_parquet(cache_path)
+#         logging.info(f"Final merged and processed dataset saved and cached at {cache_path}.")
 
 #         return df
 
@@ -164,12 +179,126 @@ def load_configuration(config_file='config.ini'):
 
 
 
+# def main():
+#     """Main function to orchestrate the FSI estimation and plotting."""
+#     config = load_configuration()
+#     # config = configparser.ConfigParser()
+#     # config.read('config.ini')
+
+#     df = merge_data(config)
+#     if df is None:
+#         logging.error("Failed to merge data. Exiting.")
+#         return
+
+#     fsi_series, omega_history, cos_sim_series, unstable_dates = estimate_fsi_recursive_rolling_with_stability(
+#         df,
+#         window_size=int(config['fsi']['window_size']),
+#         n_iter=int(config['fsi']['n_iter']),
+#         stability_threshold=float(config['fsi']['stability_threshold'])
+#     )
+
+#     # Broader anchor set with known positive relation to stress
+#     anchor_vars = ['VIX_dev_250', 'MOVE_dev_250', 'HY_OAS_dev_250', 'IG_OAS_dev_250']
+
+#     # Check if these exist in omega
+#     available_anchors = [col for col in anchor_vars if col in omega_history.columns]
+
+#     # Average their weights
+#     anchor_sign = np.sign(omega_history.iloc[-1][available_anchors].mean())
+
+#     # Flip if they're collectively negative
+#     if anchor_sign < 0:
+#         fsi_series *= -1
+#         omega_history *= -1
+
+#     # === ω Stability Diagnostics ===
+#     if unstable_dates:
+#         logging.warning(f"Detected unstable ω estimates on {len(unstable_dates)} days:")
+#         for date in unstable_dates:
+#             logging.warning(f" - {date.strftime('%Y-%m-%d')} (cos_sim = {cos_sim_series.loc[date]:.3f})")
+
+#     # === Compute contributions using latest omega ===
+#     logging.info("Computing contributions...")
+#     latest_omega = omega_history.iloc[-1]
+#     variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+
+#     # === Group attribution ===
+#     logging.info("Aggregating and plotting group-level contributions...")
+
+#     group_map = {
+#         'Volatility': ['VIX_dev_250', 'MOVE_dev_250', 'OVX_dev_250', 'VXV_dev_250', 'VIX_VXV_spread_dev_250'],
+#         'Rates': ['10Y_rate_250', '2Y_rate_250', '10Y_2Y_slope_dev_250', '10Y_3M_slope_dev_250', 'USDO_rate_dev_250'],
+#         'Funding': ['USD_stress_250', '3M_TBill_stress_250', 'Fed_RRP_stress_250', 'FRED_RRP_stress_250'],
+#         'Credit': ['IG_OAS_dev_250', 'HY_OAS_dev_250', 'HY_IG_spread_250'],
+#         'Safe_Haven': ['Gold_dev_250']
+#     }
+
+#     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
+
+#     # === Regime Classification ===
+#     fsi = variable_contribs['FSI']
+#     regimes = classify_risk_regime_hybrid(fsi)
+
+#     logging.info("Plotting results...")
+#     fig1 = plot_group_contributions_with_regime(variable_contribs)
+#     fig2 = plot_grouped_contributions(grouped_contribs)
+
+#     # Load PnL data and plot
+#     try:
+#         pnl_df = pd.read_excel(config['data']['pnl_file'], index_col=0, sheet_name='PnL')
+#         fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, variable_contribs, fsi_series)
+#     except Exception as e:
+#         logging.error(f"Error loading or plotting PnL data: {e}", exc_info=True)
+#         fig_pnl = None
+
+#     # Save charts to HTML
+#     output_file = config['output']['output_file']
+#     save_fsi_charts_to_html(fig1, fig2, fig_pnl)
+
+# if __name__ == '__main__':
+#     main()
+
+
+
+
+
+# main.py
+
+import logging
+import pandas as pd
+import configparser
+import numpy as np
+import os
+import time
+from data_fetching import get_all_series
+from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
+from plotting import (
+    plot_group_contributions_with_regime, plot_grouped_contributions,
+    plot_pnl_with_regime_ribbons, save_fsi_charts_to_html
+)
+from utils import (
+    aggregate_contributions_by_group, smooth_transition_regime, regime_from_smooth_weight,
+    moving_average_deviation, absolute_deviation_rotated, absolute_deviation,
+    classify_risk_regime_hybrid
+)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def load_configuration(config_file='config.ini'):
+    """Load configuration from a .ini file."""
+    config = configparser.ConfigParser()
+    config.read(config_file)
+    return config
+
 
 def merge_data(config, max_age_hours=12):
     """
     Loads processed data from cache if recent, otherwise runs full pipeline and caches result.
     """
-    base_path = config['data']['csv_base_path']
+    # ----- USE A PORTABLE CACHE DIRECTORY -----
+    base_path = "./cache-directory"
+    os.makedirs(base_path, exist_ok=True)
     cache_path = os.path.join(base_path, "fsi_data_latest.parquet")
 
     try:
@@ -188,7 +317,8 @@ def merge_data(config, max_age_hours=12):
             logging.error("Merged data is empty right after fetching. Exiting.")
             return None
 
-        df.to_csv(f"{base_path}\\Full_set_variables_brut.csv")
+        # ---- SAVE CSVs TO LOCAL CACHE DIR (portable) ----
+        df.to_csv(os.path.join(base_path, "Full_set_variables_brut.csv"))
 
         logging.info(f"Initial columns: {list(df.columns)}")
         logging.info(f"Initial shape: {df.shape}")
@@ -281,7 +411,7 @@ def merge_data(config, max_age_hours=12):
         raw_cols = [
             'VIX', 'MOVE Index', 'USD Index (DXY)', 'Gold Price',
             'US 10Y Treasury Yield', 'USD Overnight Rate', 'FRED RRP Volume', '3M T-Bill Yield',
-            'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield', 
+            'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield',
             'SPY P/E', '10Y-2Y Slope', '10Y-3M Slope',
             'HYG-LQD Spread', 'SPY P/B', 'OVX', 'VXV', 'VIX-VXV Spread',
             "3M T-Bill", "10Y Yield", "2Y Yield", "USD Index", "FRED RRP", "US Corp OAS"
@@ -302,7 +432,7 @@ def merge_data(config, max_age_hours=12):
             return None
 
         # --- 9. Save as CSV and cache as Parquet ---
-        df.to_csv(f"{base_path}\\Full_set_variables_std.csv")
+        df.to_csv(os.path.join(base_path, "Full_set_variables_std.csv"))
         df.to_parquet(cache_path)
         logging.info(f"Final merged and processed dataset saved and cached at {cache_path}.")
 
@@ -312,15 +442,9 @@ def merge_data(config, max_age_hours=12):
         logging.error(f"Error merging data: {e}", exc_info=True)
         return None
 
-
-
-
 def main():
     """Main function to orchestrate the FSI estimation and plotting."""
     config = load_configuration()
-    # config = configparser.ConfigParser()
-    # config.read('config.ini')
-
     df = merge_data(config)
     if df is None:
         logging.error("Failed to merge data. Exiting.")
@@ -393,5 +517,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
