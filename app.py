@@ -343,6 +343,7 @@ app.layout = html.Div([
     Input('run-btn', 'n_clicks'),
     prevent_initial_call=True
 )
+
 def run_full_pipeline(n_clicks):
     import time
     from utils import classify_risk_regime_hybrid
@@ -350,10 +351,8 @@ def run_full_pipeline(n_clicks):
     cache_key = "fsi_analysis_latest"
     # Disable button immediately
     msg = "⏳ Analysis running, please wait..."
-    # Yield the immediate feedback, but Dash expects a return, not yield:
-    # So only return at the end.
 
-    # Try cache
+    # Try cache first
     result = cache.get(cache_key)
     if result is not None:
         msg = f"✅ Served from cache (last computed at {result.get('timestamp', 'unknown')})"
@@ -366,6 +365,7 @@ def run_full_pipeline(n_clicks):
     if df is None:
         return dash.no_update, "❌ Data loading failed", False
 
+    # Estimate FSI, get rolling weights
     fsi_series, omega_history, _, _ = estimate_fsi_recursive_rolling_with_stability(
         df,
         window_size=int(config['fsi']['window_size']),
@@ -374,6 +374,8 @@ def run_full_pipeline(n_clicks):
     )
     latest_omega = omega_history.iloc[-1]
     variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+
+    # Define group mapping
     group_map = {
         'Volatility': ['VIX_dev_250', 'MOVE_dev_250', 'OVX_dev_250', 'VXV_dev_250', 'VIX_VXV_spread_dev_250'],
         'Rates': ['10Y_rate_250', '2Y_rate_250', '10Y_2Y_slope_dev_250', '10Y_3M_slope_dev_250', 'USDO_rate_dev_250'],
@@ -383,17 +385,17 @@ def run_full_pipeline(n_clicks):
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
 
-    # === THE FIX: Classify regimes and add as column ===
+    # === THE FIX: Add regime classification to dataframe ===
     regimes = classify_risk_regime_hybrid(fsi_series)
-    # Align df index to fsi_series, then assign regime
     df_aligned = df.loc[fsi_series.index].copy()
-    df_aligned["Regime"] = regimes.values
+    df_aligned["Regime"] = regimes.values  # Ensure "Regime" column is present
 
+    # Prepare results dict for dcc.Store
     result = {
         "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
         "variable_contribs": variable_contribs.to_json(date_format="iso", orient="split"),
         "grouped_contribs": grouped_contribs.to_json(date_format="iso", orient="split"),
-        "df": df_aligned.to_json(date_format="iso", orient="split"),
+        "df": df_aligned.to_json(date_format="iso", orient="split"),  # This df has the Regime column
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
     }
     cache.set(cache_key, result, expire=3600)
