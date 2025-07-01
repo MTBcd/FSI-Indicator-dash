@@ -1,0 +1,142 @@
+body, .app-container {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f4f6fa;
+}
+
+.metrics-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 30px;
+}
+.card-metric {
+    flex: 1 1 210px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px #e5e9f2;
+    padding: 18px 12px 10px 16px;
+    min-width: 180px;
+    margin-bottom: 0;
+    transition: box-shadow 0.18s;
+    border: 1px solid #e3e8ee;
+}
+.card-metric:hover {
+    box-shadow: 0 4px 22px #dde2ec;
+}
+.metric-title {
+    font-size: 1.08em;
+    font-weight: 500;
+    color: #30507d;
+    margin-bottom: 6px;
+}
+.metric-value {
+    font-size: 1.45em;
+    font-weight: bold;
+    margin-top: 6px;
+}
+.metric-value.green { color: #15b67a; }
+.metric-value.yellow { color: #e3b112; }
+.metric-value.amber { color: #eb830d; }
+.metric-value.red { color: #e53935; }
+
+.regime-tag.green { color: #fff; background: #15b67a; border-radius: 6px; padding: 2px 10px; }
+.regime-tag.yellow { color: #fff; background: #e3b112; border-radius: 6px; padding: 2px 10px; }
+.regime-tag.amber { color: #fff; background: #eb830d; border-radius: 6px; padding: 2px 10px; }
+.regime-tag.red { color: #fff; background: #e53935; border-radius: 6px; padding: 2px 10px; }
+.regime-tag { margin-left: 10px; font-size: 1.05em; font-weight: 600; }
+
+.timestamp-label {
+    font-size: 1.02em;
+    color: #9da5b4;
+    margin-top: 2px;
+    margin-left: 10px;
+}
+
+.chart-container {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 0 10px #e5e5e5;
+    padding: 18px 12px 10px 14px;
+    margin-bottom: 22px;
+}
+
+.dash-graph {
+    min-height: 330px;
+}
+
+.dash-table-container {
+    background: #f7f8fa;
+    padding: 6px 10px;
+    border-radius: 7px;
+    box-shadow: 0 0 4px #ebedf1;
+    margin-bottom: 18px;
+}
+
+.download-btn {
+    background: #396aff;
+    color: #fff;
+    border-radius: 7px;
+    padding: 8px 20px;
+    font-size: 1em;
+    font-weight: 600;
+    border: none;
+    margin-right: 10px;
+    transition: background 0.15s;
+    cursor: pointer;
+}
+.download-btn:hover {
+    background: #2247b9;
+}
+
+.dash-uploader {
+    margin: 8px 0 0 0;
+    border: 1.5px dashed #abc3e9;
+    border-radius: 7px;
+    background: #f4f8fd;
+    padding: 12px;
+    text-align: center;
+}
+.dash-uploader input[type="file"] {
+    display: none;
+}
+.dash-uploader .upload-text {
+    color: #30507d;
+    font-size: 1.04em;
+    margin-bottom: 2px;
+}
+
+.dash-tooltip {
+    background: #222c38;
+    color: #fff;
+    border-radius: 7px;
+    font-size: 0.98em;
+    padding: 6px 10px;
+    box-shadow: 0 0 8px #bbb;
+}
+
+.dash-spinner {
+    margin-top: 24px;
+}
+
+@media (max-width: 950px) {
+    .metrics-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+    .card-metric {
+        width: 98% !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .metrics-row {
+        flex-direction: column;
+        gap: 6px;
+    }
+    .card-metric {
+        width: 98% !important;
+        min-width: 130px;
+        font-size: 0.98em;
+    }
+}
