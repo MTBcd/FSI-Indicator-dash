@@ -309,38 +309,188 @@ def info_icon(text):
 
 # --- App Layout ---
 app.layout = html.Div([
+    # --- Custom CSS for Pro Styling ---
+    html.Style('''
+        body, .app-container {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f4f6fa;
+        }
+        .metrics-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 30px;
+        }
+        .card-metric {
+            flex: 1 1 210px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px #e5e9f2;
+            padding: 18px 12px 10px 16px;
+            min-width: 180px;
+            margin-bottom: 0;
+            transition: box-shadow 0.18s;
+            border: 1px solid #e3e8ee;
+        }
+        .card-metric:hover {
+            box-shadow: 0 4px 22px #dde2ec;
+        }
+        .metric-title {
+            font-size: 1.08em;
+            font-weight: 500;
+            color: #30507d;
+            margin-bottom: 6px;
+        }
+        .metric-value {
+            font-size: 1.45em;
+            font-weight: bold;
+            margin-top: 6px;
+        }
+        .metric-value.green { color: #15b67a; }
+        .metric-value.yellow { color: #e3b112; }
+        .metric-value.amber { color: #eb830d; }
+        .metric-value.red { color: #e53935; }
+        .regime-tag.green { color: #fff; background: #15b67a; border-radius: 6px; padding: 2px 10px; }
+        .regime-tag.yellow { color: #fff; background: #e3b112; border-radius: 6px; padding: 2px 10px; }
+        .regime-tag.amber { color: #fff; background: #eb830d; border-radius: 6px; padding: 2px 10px; }
+        .regime-tag.red { color: #fff; background: #e53935; border-radius: 6px; padding: 2px 10px; }
+        .regime-tag { margin-left: 10px; font-size: 1.05em; font-weight: 600; }
+        .timestamp-label {
+            font-size: 1.02em;
+            color: #9da5b4;
+            margin-top: 2px;
+            margin-left: 10px;
+        }
+        .chart-container {
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px #e5e5e5;
+            padding: 18px 12px 10px 14px;
+            margin-bottom: 22px;
+        }
+        .dash-graph {
+            min-height: 330px;
+        }
+        .dash-table-container {
+            background: #f7f8fa;
+            padding: 6px 10px;
+            border-radius: 7px;
+            box-shadow: 0 0 4px #ebedf1;
+            margin-bottom: 18px;
+        }
+        .download-btn {
+            background: #396aff;
+            color: #fff;
+            border-radius: 7px;
+            padding: 8px 20px;
+            font-size: 1em;
+            font-weight: 600;
+            border: none;
+            margin-right: 10px;
+            transition: background 0.15s;
+            cursor: pointer;
+        }
+        .download-btn:hover {
+            background: #2247b9;
+        }
+        .dash-uploader {
+            margin: 8px 0 0 0;
+            border: 1.5px dashed #abc3e9;
+            border-radius: 7px;
+            background: #f4f8fd;
+            padding: 12px;
+            text-align: center;
+        }
+        .dash-uploader input[type="file"] {
+            display: none;
+        }
+        .dash-uploader .upload-text {
+            color: #30507d;
+            font-size: 1.04em;
+            margin-bottom: 2px;
+        }
+        .dash-tooltip {
+            background: #222c38;
+            color: #fff;
+            border-radius: 7px;
+            font-size: 0.98em;
+            padding: 6px 10px;
+            box-shadow: 0 0 8px #bbb;
+        }
+        .dash-spinner {
+            margin-top: 24px;
+        }
+        @media (max-width: 950px) {
+            .metrics-row {
+                flex-direction: column;
+                gap: 12px;
+            }
+            .card-metric {
+                width: 98% !important;
+            }
+        }
+        @media (max-width: 600px) {
+            .metrics-row {
+                flex-direction: column;
+                gap: 6px;
+            }
+            .card-metric {
+                width: 98% !important;
+                min-width: 130px;
+                font-size: 0.98em;
+            }
+        }
+    '''),
+
+    # --- Header, Timestamp, Controls ---
     html.H1("Financial Stress Dashboard", style={"margin-bottom": "5px"}),
-    html.Div(id='timestamp-label', style={'font-size': '1em', "margin-bottom": "12px"}),
+    html.Div(id='timestamp-label', className="timestamp-label", style={'font-size': '1em', "margin-bottom": "12px"}),
     html.Button("Run/Refresh Analysis", id="run-btn", n_clicks=0, disabled=False, style={"margin-bottom": "7px"}),
     html.Span(id='run-message', style={'color': 'green', 'margin-left': '20px', "font-size": "1em"}),
     dcc.Store(id='fsi-store'),
+
+    # --- Main Chart Panels ---
     dcc.Loading(
         id="loading-fsi",
         type="circle",
         children=[
             html.Div([
                 html.Div([
-                    html.H2(["Variable-Level FSI", info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")]),
+                    html.H2([
+                        "Variable-Level FSI", 
+                        info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
+                    ]),
                     dcc.Graph(id='fig1'),
-                    html.Button("Download as Image", id="dl-fig1", n_clicks=0, style={"margin": "0 0 15px 0"})
+                    html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
                 ], style={"margin-bottom": "10px"}),
                 html.Div([
-                    html.H2(["Group-Level FSI", info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")]),
+                    html.H2([
+                        "Group-Level FSI", 
+                        info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
+                    ]),
                     dcc.Graph(id='fig2'),
-                    html.Button("Download as Image", id="dl-fig2", n_clicks=0, style={"margin": "0 0 15px 0"})
+                    html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
                 ]),
                 html.Div([
-                    html.H2(["PnL Chart with Regime Ribbons", info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")]),
+                    html.H2([
+                        "PnL Chart with Regime Ribbons", 
+                        info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
+                    ]),
                     dcc.Graph(id='fig-pnl'),
-                    html.Button("Download as Image", id="dl-pnl", n_clicks=0, style={"margin": "0 0 15px 0"})
+                    html.Button("Download as Image", id="dl-pnl", n_clicks=0, className="download-btn")
                 ]),
                 html.Div([
-                    html.Label(["Upload PnL file (.xlsx/.csv):", info_icon("Date and P/L columns required (case-insensitive).")]),
+                    html.Label([
+                        "Upload PnL file (.xlsx/.csv):", 
+                        info_icon("Date and P/L columns required (case-insensitive).")
+                    ]),
                     dcc.Upload(
                         id='upload-pnl',
                         children=html.Button('Upload PnL File'),
                         accept='.xlsx,.csv',
                         multiple=False,
+                        className="dash-uploader"
                     ),
                     html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
                     html.Span(id='upload-message', style={'color': 'red', 'margin-left': '20px'})
@@ -349,29 +499,50 @@ app.layout = html.Div([
         ]
     ),
     html.Hr(),
+
+    # --- Forward-Looking & Regime Metrics ---
     html.Div([
-        html.H2(["Forward-Looking & Regime Risk Metrics", info_icon("Regimes and probability forecasts based on current model results.")]),
+        html.H2([
+            "Forward-Looking & Regime Risk Metrics", 
+            info_icon("Regimes and probability forecasts based on current model results.")
+        ]),
         html.Div([
             html.Div([
-                html.H4(["Current Regime (Rule-Based):", info_icon("Classified by FSI and thresholds.")]),
+                html.H4([
+                    "Current Regime (Rule-Based):", 
+                    info_icon("Classified by FSI and thresholds.")
+                ]),
                 html.Div(id='current-regime', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px"})
             ], className="card-metric"),
             html.Div([
-                html.H4(["Current HMM Market State:", info_icon("Market regime inferred by a Hidden Markov Model.")]),
+                html.H4([
+                    "Current HMM Market State:", 
+                    info_icon("Market regime inferred by a Hidden Markov Model.")
+                ]),
                 html.Div(id='current-hmm', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px", "color": "#2d3436"})
             ], className="card-metric"),
             html.Div([
-                html.H4(["Probability of 'Red' Regime (Logit):", info_icon("20-day ahead probability, logistic regression.")]),
+                html.H4([
+                    "Probability of 'Red' Regime (Logit):", 
+                    info_icon("20-day ahead probability, logistic regression.")
+                ]),
                 dcc.Graph(id='prob-red-logit', config={'displayModeBar': False}, style={'height': '140px', 'width': '98%'})
             ], className="card-metric"),
             html.Div([
-                html.H4(["Probability of 'Red' Regime (XGBoost):", info_icon("20-day ahead probability, XGBoost.")]),
+                html.H4([
+                    "Probability of 'Red' Regime (XGBoost):", 
+                    info_icon("20-day ahead probability, XGBoost.")
+                ]),
                 dcc.Graph(id='prob-red-xgb', config={'displayModeBar': False}, style={'height': '140px', 'width': '98%'})
             ], className="card-metric"),
         ], className="metrics-row"),
-        html.H4(["Historical Regime Transition Matrix", info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")]),
+        html.H4([
+            "Historical Regime Transition Matrix", 
+            info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
+        ]),
         dcc.Graph(id='regime-transition-matrix'),
     ], style={'width': '95%', 'margin': 'auto'}),
+
     dcc.Download(id="download-image"),
 ], style={
     'font-family': 'Segoe UI, Arial, sans-serif',
@@ -379,41 +550,6 @@ app.layout = html.Div([
     "padding-bottom": "35px"
 })
 
-# --- Add custom CSS for responsiveness and metric row ---
-app.clientside_callback(
-    """
-    function() {
-        var style = document.createElement('style');
-        style.innerHTML = `
-        .metrics-row {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            gap: 15px;
-            margin-bottom: 22px;
-        }
-        .card-metric {
-            flex: 1 1 220px;
-            background: #fff;
-            border-radius: 10px;
-            padding: 15px 10px 8px 10px;
-            box-shadow: 0 0 8px #e4e4e4;
-            min-width: 170px;
-            margin-bottom: 0;
-        }
-        @media (max-width: 900px) {
-            .metrics-row { flex-direction: column; }
-            .card-metric { width: 99% !important; }
-        }
-        `;
-        document.head.appendChild(style);
-        return '';
-    }
-    """,
-    Output('timestamp-label', 'children'),
-    Input('run-btn', 'n_clicks'),
-    prevent_initial_call=True
-)
 
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
 @app.callback(
