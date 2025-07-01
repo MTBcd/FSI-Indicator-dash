@@ -274,7 +274,7 @@ from plotting import (
 )
 from utils import (
     aggregate_contributions_by_group,
-    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix,
+    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, classify_risk_regime_hybrid
 )
 
 cache = diskcache.Cache("./cache-directory")
@@ -344,15 +344,23 @@ app.layout = html.Div([
     prevent_initial_call=True
 )
 def run_full_pipeline(n_clicks):
+    import time
+    from utils import classify_risk_regime_hybrid
+
     cache_key = "fsi_analysis_latest"
-    # Try cache first
+    # Disable button immediately
+    msg = "⏳ Analysis running, please wait..."
+    # Yield the immediate feedback, but Dash expects a return, not yield:
+    # So only return at the end.
+
+    # Try cache
     result = cache.get(cache_key)
     if result is not None:
         msg = f"✅ Served from cache (last computed at {result.get('timestamp', 'unknown')})"
+        # Re-enable button
         return result, msg, False
 
-    # If not cached, run pipeline
-    msg = "⏳ Analysis running, please wait..."
+    # If not cached, run full pipeline
     config = load_configuration()
     df = merge_data(config)
     if df is None:
@@ -374,11 +382,18 @@ def run_full_pipeline(n_clicks):
         'Safe_Haven': ['Gold_dev_250']
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
+
+    # === THE FIX: Classify regimes and add as column ===
+    regimes = classify_risk_regime_hybrid(fsi_series)
+    # Align df index to fsi_series, then assign regime
+    df_aligned = df.loc[fsi_series.index].copy()
+    df_aligned["Regime"] = regimes.values
+
     result = {
         "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
         "variable_contribs": variable_contribs.to_json(date_format="iso", orient="split"),
         "grouped_contribs": grouped_contribs.to_json(date_format="iso", orient="split"),
-        "df": df.to_json(date_format="iso", orient="split"),
+        "df": df_aligned.to_json(date_format="iso", orient="split"),
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
     }
     cache.set(cache_key, result, expire=3600)
