@@ -481,11 +481,12 @@ def update_all_from_store(data):
     [Input('upload-pnl', 'contents')],
     [State('upload-pnl', 'filename'), State('fsi-store', 'data')]
 )
+
 def update_pnl(upload_contents, upload_filename, fsi_data):
     if fsi_data is None:
         return go.Figure(), "Please run analysis first."
-    variable_contribs = pd.read_json(fsi_data["variable_contribs"], orient="split")
-    fsi_series = pd.read_json(fsi_data["fsi_series"], orient="split")
+    variable_contribs = pd.read_json(io.StringIO(fsi_data["variable_contribs"]), orient="split")
+    fsi_series = pd.read_json(io.StringIO(fsi_data["fsi_series"]), typ="series", orient="split")
     msg = ""
     pnl_df = None
     if upload_contents is not None:
@@ -504,6 +505,7 @@ def update_pnl(upload_contents, upload_filename, fsi_data):
         except Exception as e:
             msg = f"Error reading Excel: {e}"
             pnl_df = None
+
     if pnl_df is not None:
         fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, variable_contribs, fsi_series)
     else:
