@@ -416,44 +416,69 @@ html.Div([
         "Forward-Looking & Regime Risk Metrics", 
         info_icon("Regimes and probability forecasts based on current model results.")
     ]),
-    # --- Improved Metrics Layout: 2x2 grid, regimes stacked, gauges side by side ---
+    # --- Improved Metrics Layout: regimes stacked at left, gauges side by side at right ---
     html.Div([
-        # Regime Cards (stacked vertically)
+        # Left: Regime Cards stacked vertically
         html.Div([
             html.Div([
                 html.H4([
                     "Current Regime (Rule-Based):", 
                     info_icon("Classified by FSI and thresholds.")
                 ]),
-                html.Div(id='current-regime', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px"})
+                html.Div(
+                    id='current-regime',
+                    style={
+                        'font-size': '1.7em',
+                        'font-weight': 'bold',
+                        "margin-bottom": "12px"
+                    }
+                )
             ], className="card-metric", style={"margin-bottom": "12px"}),
             html.Div([
                 html.H4([
                     "Current HMM Market Regime:", 
                     info_icon("Market regime inferred by a Hidden Markov Model.")
                 ]),
-                html.Div(id='current-hmm', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px"})
+                html.Div(
+                    id='current-hmm',
+                    style={
+                        'font-size': '1.7em',
+                        'font-weight': 'bold'
+                    }
+                )
             ], className="card-metric")
-        ], style={"display": "flex", "flexDirection": "column", "flex": "1", "gap": "10px", "minWidth": "210px"}),
+        ], style={
+            "display": "flex",
+            "flexDirection": "column",
+            "flex": "1",
+            "gap": "10px",
+            "minWidth": "210px"
+        }),
 
-        # Gauge Cards (side by side)
+        # Right: Gauge Cards (side by side)
         html.Div([
             html.Div([
                 dcc.Graph(
-                    id='prob-red-logit', 
+                    id='prob-red-logit',
                     config={'displayModeBar': False},
                     style={'height': '110px', 'minWidth': "210px", "marginRight": "10px"}
                 )
             ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
             html.Div([
                 dcc.Graph(
-                    id='prob-red-xgb', 
+                    id='prob-red-xgb',
                     config={'displayModeBar': False},
                     style={'height': '110px', 'minWidth': "210px"}
                 )
             ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
-        ], style={"display": "flex", "flexDirection": "row", "gap": "12px", "flex": "2"})
-    ], className="metrics-row", style={"gap": "18px"}),
+        ], style={
+            "display": "flex",
+            "flexDirection": "row",
+            "gap": "12px",
+            "flex": "2",
+            "alignItems": "center"
+        })
+    ], className="metrics-row", style={"gap": "24px", "alignItems": "center"}),
 
     html.H4([
         "Historical Regime Transition Matrix", 
