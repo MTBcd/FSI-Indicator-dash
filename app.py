@@ -320,10 +320,10 @@ app.layout = html.Div([
             color="#396aff",  # Optional: your theme color
             children=[
                 html.Button(
-                    "Run/Refresh Analysis", 
-                    id="run-btn", 
-                    n_clicks=0, 
-                    disabled=False, 
+                    "Run/Refresh Analysis",
+                    id="run-btn",
+                    n_clicks=0,
+                    disabled=False,
                     style={"margin-bottom": "7px", "margin-right": "18px"}
                 ),
                 html.Span(id='run-message', style={'color': 'green', "font-size": "1em"}),
@@ -342,7 +342,7 @@ app.layout = html.Div([
                 # Variable-Level FSI
                 html.Div([
                     html.H2([
-                        "Variable-Level FSI", 
+                        "Variable-Level FSI",
                         info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
                     ]),
                     dcc.Graph(id='fig1'),
@@ -352,7 +352,7 @@ app.layout = html.Div([
                 # Group-Level FSI
                 html.Div([
                     html.H2([
-                        "Group-Level FSI", 
+                        "Group-Level FSI",
                         info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
                     ]),
                     dcc.Graph(id='fig2'),
@@ -362,7 +362,7 @@ app.layout = html.Div([
                 # --- Improved PnL Chart Section ---
                 html.Div([
                     html.H2([
-                        "PnL Chart with Regime Ribbons", 
+                        "PnL Chart with Regime Ribbons",
                         info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
                     ]),
                     dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
@@ -403,14 +403,7 @@ app.layout = html.Div([
 
                     # Preview always below everything
                     html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
-
                 ], style={'margin-bottom': '30px'}),
-
-                # --- Two distribution charts, side by side (inside the main chart panel!) ---
-                html.Div([
-                    dcc.Graph(id='dist-pnl-range', style={"flex": "1", "minWidth": "380px", "height": "360px"}),
-                    dcc.Graph(id='dist-pnl-full', style={"flex": "1", "minWidth": "380px", "height": "360px"})
-                ], style={"display": "flex", "flexDirection": "row", "gap": "30px", "margin": "30px 0"}),
 
             ], style={'width': '95%', 'margin': 'auto'})
         ]
@@ -420,16 +413,15 @@ app.layout = html.Div([
     # --- Forward-Looking & Regime Metrics ---
     html.Div([
         html.H2([
-            "Forward-Looking & Regime Risk Metrics", 
+            "Forward-Looking & Regime Risk Metrics",
             info_icon("Regimes and probability forecasts based on current model results.")
         ]),
-        # --- Improved Metrics Layout: regimes stacked at left, gauges side by side at right ---
-        html.Div([
-            # Left: Regime Cards stacked vertically
+        html.Div([   # main row: left = stacked regimes, right = gauges side by side
+            # --- Left: regimes stacked vertically ---
             html.Div([
                 html.Div([
                     html.H4([
-                        "Current Regime (Rule-Based):", 
+                        "Current Regime (Rule-Based):",
                         info_icon("Classified by FSI and thresholds.")
                     ]),
                     html.Div(
@@ -443,7 +435,7 @@ app.layout = html.Div([
                 ], className="card-metric", style={"margin-bottom": "12px"}),
                 html.Div([
                     html.H4([
-                        "Current HMM Market Regime:", 
+                        "Current HMM Market Regime:",
                         info_icon("Market regime inferred by a Hidden Markov Model.")
                     ]),
                     html.Div(
@@ -457,42 +449,59 @@ app.layout = html.Div([
             ], style={
                 "display": "flex",
                 "flexDirection": "column",
-                "flex": "1",
-                "gap": "10px",
-                "minWidth": "210px"
+                "justifyContent": "center",    # vertically center regimes vs gauges
+                "minWidth": "230px",
+                "marginRight": "44px"         # space between regime and gauges
             }),
 
-            # Right: Gauge Cards (side by side)
+            # --- Right: gauges side by side, vertically centered ---
             html.Div([
-                html.Div([
-                    dcc.Graph(
-                        id='prob-red-logit',
-                        config={'displayModeBar': False},
-                        style={'height': '110px', 'minWidth': "210px", "marginRight": "10px"}
-                    )
-                ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
-                html.Div([
-                    dcc.Graph(
-                        id='prob-red-xgb',
-                        config={'displayModeBar': False},
-                        style={'height': '110px', 'minWidth': "210px"}
-                    )
-                ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
+                dcc.Graph(
+                    id='prob-red-logit',
+                    config={'displayModeBar': False},
+                    style={'height': '140px', 'minWidth': "230px", "marginRight": "20px"}
+                ),
+                dcc.Graph(
+                    id='prob-red-xgb',
+                    config={'displayModeBar': False},
+                    style={'height': '140px', 'minWidth': "230px"}
+                )
             ], style={
                 "display": "flex",
                 "flexDirection": "row",
-                "gap": "12px",
-                "flex": "2",
                 "alignItems": "center"
-            })
-        ], className="metrics-row", style={"gap": "24px", "alignItems": "center"}),
-
+            }),
+        ], style={
+            "display": "flex",
+            "flexDirection": "row",
+            "alignItems": "center",  # vertically align both columns
+            "gap": "20px"
+        }),
         html.H4([
-            "Historical Regime Transition Matrix", 
+            "Historical Regime Transition Matrix",
             info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
         ]),
         dcc.Graph(id='regime-transition-matrix'),
     ], style={'width': '95%', 'margin': 'auto'}),
+
+    # --- PnL Distribution Analysis Section ---
+    html.Div([
+        html.H2("PnL Distribution Analysis", style={"marginTop": "30px"}),
+        html.Label("Select PnL date range:"),
+        dcc.DatePickerRange(
+            id='pnl-date-range',
+            min_date_allowed=None,  # set by callback after upload
+            max_date_allowed=None,
+            start_date=None,
+            end_date=None,
+            display_format="YYYY-MM-DD",
+            style={"marginBottom": "12px"}
+        ),
+        html.Div([
+            dcc.Graph(id='dist-pnl-range', style={"flex": "1", "minWidth": "380px", "height": "360px"}),
+            dcc.Graph(id='dist-pnl-full', style={"flex": "1", "minWidth": "380px", "height": "360px"})
+        ], style={"display": "flex", "flexDirection": "row", "gap": "30px"})
+    ], style={"margin": "30px 0"}),
 
     dcc.Download(id="download-image"),
 ], style={
@@ -501,11 +510,6 @@ app.layout = html.Div([
     "padding-bottom": "35px"
 })
 
-# --- Two distribution charts, side by side ---
-html.Div([
-    dcc.Graph(id='dist-pnl-range', style={"flex": "1", "minWidth": "380px", "height": "360px"}),
-    dcc.Graph(id='dist-pnl-full', style={"flex": "1", "minWidth": "380px", "height": "360px"})
-], style={"display": "flex", "flexDirection": "row", "gap": "30px", "margin": "30px 0"}),
 
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
 @app.callback(
@@ -734,6 +738,36 @@ def update_pnl(upload_contents, upload_filename, fsi_data):
         fig_pnl.update_layout(title="PnL Chart (Upload file to see data)")
     return fig_pnl, msg, preview_table
 
+# --- Set available date range after PnL upload ---
+@app.callback(
+    [
+        Output('pnl-date-range', 'min_date_allowed'),
+        Output('pnl-date-range', 'max_date_allowed'),
+        Output('pnl-date-range', 'start_date'),
+        Output('pnl-date-range', 'end_date'),
+    ],
+    Input('upload-pnl', 'contents'),
+    State('upload-pnl', 'filename')
+)
+def set_datepicker_limits(upload_contents, upload_filename):
+    if not upload_contents:
+        return None, None, None, None
+    content_type, content_string = upload_contents.split(',')
+    decoded = base64.b64decode(content_string)
+    if upload_filename.lower().endswith('.csv'):
+        pnl_df = pd.read_csv(io.BytesIO(decoded))
+    else:
+        pnl_df = pd.read_excel(io.BytesIO(decoded))
+    pnl_df.columns = [c.strip() for c in pnl_df.columns]
+    col_map = {c.lower(): c for c in pnl_df.columns}
+    if not {'date', 'p/l'}.issubset(col_map):
+        return None, None, None, None
+    pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
+    min_date = pnl_df['Date'].min().date()
+    max_date = pnl_df['Date'].max().date()
+    return min_date, max_date, min_date, max_date
+
+
 # --- 4. Download as Image (all charts) ---
 @app.callback(
     Output("download-image", "data"),
@@ -757,16 +791,20 @@ def download_figure(dl1, dl2, dl3, fig1, fig2, fig_pnl):
     # Export as PNG
     return dcc.send_bytes(fig.to_image(format="png"), filename=f"{btn_id}.png")
 
+# --- Run the distribution plots ---
 
 @app.callback(
     [Output('dist-pnl-range', 'figure'),
      Output('dist-pnl-full', 'figure')],
-    Input('upload-pnl', 'contents'),
+    [
+        Input('upload-pnl', 'contents'),
+        Input('pnl-date-range', 'start_date'),
+        Input('pnl-date-range', 'end_date')
+    ],
     State('upload-pnl', 'filename')
 )
-def update_pnl_distributions(upload_contents, upload_filename):
-    if upload_contents is None:
-        # Return empty figures if nothing uploaded
+def update_pnl_distributions(upload_contents, start_date, end_date, upload_filename):
+    if not upload_contents:
         return go.Figure(), go.Figure()
     import io, base64
     content_type, content_string = upload_contents.split(',')
@@ -775,27 +813,27 @@ def update_pnl_distributions(upload_contents, upload_filename):
         pnl_df = pd.read_csv(io.BytesIO(decoded))
     else:
         pnl_df = pd.read_excel(io.BytesIO(decoded))
-    # Normalize column names for case-insensitive access
     pnl_df.columns = [c.strip() for c in pnl_df.columns]
     col_map = {c.lower(): c for c in pnl_df.columns}
     if not {'date', 'p/l'}.issubset(col_map):
         return go.Figure(), go.Figure()
     pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
     pnl_df = pnl_df.sort_values('Date')
+    # Filter by selected date range
+    if start_date and end_date:
+        mask = (pnl_df['Date'] >= pd.to_datetime(start_date)) & (pnl_df['Date'] <= pd.to_datetime(end_date))
+        pnl_df = pnl_df.loc[mask]
     pnl_series = pnl_df[col_map['p/l']]
-
-    # Date range string for chart subtitle
     if not pnl_df.empty:
         date0 = pnl_df['Date'].min().strftime("%b-%Y")
         date1 = pnl_df['Date'].max().strftime("%b-%Y")
         period_title = f"{date0} to {date1}"
     else:
         period_title = ""
-
     fig_range = plot_distribution_plotly(pnl_series, period_title, pnl_range=(-0.03, 0.03))
     fig_full = plot_distribution_plotly(pnl_series, period_title)
-
     return fig_range, fig_full
+
 
 
 
