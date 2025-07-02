@@ -313,9 +313,24 @@ app.layout = html.Div([
 
     # --- Header, Timestamp, Controls ---
     html.H1("Financial Stress Dashboard", style={"margin-bottom": "5px"}),
-    html.Div(id='timestamp-label', className="timestamp-label", style={'font-size': '1em', "margin-bottom": "12px"}),
-    html.Button("Run/Refresh Analysis", id="run-btn", n_clicks=0, disabled=False, style={"margin-bottom": "7px"}),
-    html.Span(id='run-message', style={'color': 'green', 'margin-left': '20px', "font-size": "1em"}),
+    html.Div([
+        dcc.Loading(
+            id="loading-refresh",
+            type="circle",
+            color="#396aff",  # Optional: your theme color
+            children=[
+                html.Button(
+                    "Run/Refresh Analysis", 
+                    id="run-btn", 
+                    n_clicks=0, 
+                    disabled=False, 
+                    style={"margin-bottom": "7px", "margin-right": "18px"}
+                ),
+                html.Span(id='run-message', style={'color': 'green', "font-size": "1em"}),
+                html.Div(id='timestamp-label', className="timestamp-label", style={'font-size': '1em', "margin-bottom": "12px"})
+            ]
+        )
+    ], style={"display": "flex", "alignItems": "center", "gap": "10px"}),
     dcc.Store(id='fsi-store'),
 
 # --- Main Chart Panels ---
