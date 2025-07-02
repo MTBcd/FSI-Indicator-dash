@@ -317,7 +317,7 @@ app.layout = html.Div([
         dcc.Loading(
             id="loading-refresh",
             type="circle",
-            color="#396aff",  # Optional: your theme color
+            color="#396aff",
             children=[
                 html.Button(
                     "Run/Refresh Analysis",
@@ -374,7 +374,7 @@ app.layout = html.Div([
                             id="dl-pnl",
                             n_clicks=0,
                             className="download-btn",
-                            style={"margin-right": "auto"}  # Pushes the upload button to the far right
+                            style={"margin-right": "auto"}
                         ),
                         dcc.Upload(
                             id='upload-pnl',
@@ -403,8 +403,8 @@ app.layout = html.Div([
 
                     # Preview always below everything
                     html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
-                ], style={'margin-bottom': '30px'}),
 
+                ], style={'margin-bottom': '30px'}),
             ], style={'width': '95%', 'margin': 'auto'})
         ]
     ),
@@ -416,8 +416,7 @@ app.layout = html.Div([
             "Forward-Looking & Regime Risk Metrics",
             info_icon("Regimes and probability forecasts based on current model results.")
         ]),
-        html.Div([   # main row: left = stacked regimes, right = gauges side by side
-            # --- Left: regimes stacked vertically ---
+        html.Div([
             html.Div([
                 html.Div([
                     html.H4([
@@ -449,12 +448,11 @@ app.layout = html.Div([
             ], style={
                 "display": "flex",
                 "flexDirection": "column",
-                "justifyContent": "center",    # vertically center regimes vs gauges
+                "justifyContent": "center",
                 "minWidth": "230px",
-                "marginRight": "44px"         # space between regime and gauges
+                "marginRight": "44px"
             }),
 
-            # --- Right: gauges side by side, vertically centered ---
             html.Div([
                 dcc.Graph(
                     id='prob-red-logit',
@@ -474,7 +472,7 @@ app.layout = html.Div([
         ], style={
             "display": "flex",
             "flexDirection": "row",
-            "alignItems": "center",  # vertically align both columns
+            "alignItems": "center",
             "gap": "20px"
         }),
         html.H4([
@@ -490,7 +488,7 @@ app.layout = html.Div([
         html.Label("Select PnL date range:"),
         dcc.DatePickerRange(
             id='pnl-date-range',
-            min_date_allowed=None,  # set by callback after upload
+            min_date_allowed=None,
             max_date_allowed=None,
             start_date=None,
             end_date=None,
@@ -509,7 +507,6 @@ app.layout = html.Div([
     'background-color': '#f7f8fa',
     "padding-bottom": "35px"
 })
-
 
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
 @app.callback(
