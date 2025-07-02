@@ -7,6 +7,10 @@ import chart_studio
 import chart_studio.plotly as py
 import logging
 from utils import smooth_transition_regime, regime_from_smooth_weight
+import numpy as np
+import plotly.graph_objects as go
+from scipy.stats import gaussian_kde, skew, kurtosis
+from numpy import trapz
 
 # chart_studio.tools.set_credentials_file(username='Tuler', api_key='EOdkt6iCFZgZvJtTdFc6')
 
@@ -490,7 +494,6 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         return None
 
 
-
 def save_fsi_charts_to_html(fig1, fig2, fig3=None, filename="fsi_combined_report.html"):
     with open(filename, "w") as f:
         f.write("<html><head><title>FSI Report</title></head><body>\n")
@@ -503,3 +506,90 @@ def save_fsi_charts_to_html(fig1, fig2, fig3=None, filename="fsi_combined_report
             f.write(fig3.to_html(full_html=False, include_plotlyjs=False))
         f.write("</body></html>")
     print(f"✅ Combined HTML saved to: {filename}")
+
+
+def plot_distribution_plotly(pnl_values, period_title, pnl_range=None):
+    """Plotly version for Dash. Returns a go.Figure."""
+    # Optionally filter by range
+    if pnl_range:
+        pnl_values = pnl_values[(pnl_values >= pnl_range[0]) & (pnl_values <= pnl_range[1])]
+    pnl_values = pnl_values.dropna()
+
+    # Stats
+    pnl_skewness = skew(pnl_values)
+    pnl_kurtosis = kurtosis(pnl_values)
+    kde = gaussian_kde(pnl_values, bw_method='scott')
+    x_vals = np.linspace(min(pnl_values), max(pnl_values), 500)
+    y_vals = kde(x_vals)
+
+    # Area
+    pos_mask = x_vals >= 0
+    neg_mask = x_vals < 0
+    area_positive = trapz(y_vals[pos_mask], x_vals[pos_mask])
+    area_negative = trapz(y_vals[neg_mask], x_vals[neg_mask])
+
+    # Histogram
+    hist = np.histogram(pnl_values, bins=50, density=True)
+    hist_x = (hist[1][1:] + hist[1][:-1]) / 2
+    hist_y = hist[0]
+
+    fig = go.Figure()
+
+    # Histogram
+    fig.add_trace(go.Bar(
+        x=hist_x, y=hist_y,
+        marker=dict(color='#3096B9'),
+        opacity=0.75,
+        name='PnL Histogram',
+        hoverinfo='skip'
+    ))
+
+    # KDE
+    fig.add_trace(go.Scatter(
+        x=x_vals, y=y_vals,
+        mode='lines',
+        line=dict(color='#002060', width=3),
+        name='Smoothed PnL'
+    ))
+
+    # Metrics (as annotation)
+    metrics = (
+        f"<b>Skewness</b>: {pnl_skewness:.2f}<br>"
+        f"<b>Kurtosis</b>: {pnl_kurtosis:.2f}<br>"
+        f"<b>Area (Pos)</b>: {area_positive:.2f}<br>"
+        f"<b>Area (Neg)</b>: {area_negative:.2f}"
+    )
+
+    fig.add_annotation(
+        x=1.01, y=1.04, xref="paper", yref="paper",
+        text=metrics, showarrow=False,
+        align='right', font=dict(size=11, family="Arial", color='#002060')
+    )
+
+    # Subtitle
+    total_obs = len(pnl_values)
+    subtitle = f'{total_obs} PnL observations<br>from {period_title}'
+    fig.add_annotation(
+        x=0, y=1.04, xref="paper", yref="paper",
+        text=f"<b>{subtitle}</b>", showarrow=False,
+        align='left', font=dict(size=11, family="Arial", color='#002060')
+    )
+
+    fig.update_layout(
+        xaxis_title="PnL Values",
+        yaxis_title="Density",
+        margin=dict(l=50, r=110, t=35, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=-0.22,
+            xanchor="center", x=0.5,
+            font=dict(size=11, family="Arial")
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        xaxis=dict(tickfont=dict(family="Arial", color='#002060', size=12)),
+        yaxis=dict(tickfont=dict(family="Arial", color='#3096B9', size=12)),
+        height=340
+    )
+
+    return fig

@@ -272,6 +272,7 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
+    plot_distribution_plotly,
 )
 from utils import (
     aggregate_contributions_by_group,
@@ -310,7 +311,6 @@ def info_icon(text):
 
 # --- App Layout ---
 app.layout = html.Div([
-
     # --- Header, Timestamp, Controls ---
     html.H1("Financial Stress Dashboard", style={"margin-bottom": "5px"}),
     html.Div([
@@ -333,170 +333,186 @@ app.layout = html.Div([
     ], style={"display": "flex", "alignItems": "center", "gap": "10px"}),
     dcc.Store(id='fsi-store'),
 
-# --- Main Chart Panels ---
-dcc.Loading(
-    id="loading-fsi",
-    type="circle",
-    children=[
-        html.Div([
-            # Variable-Level FSI
+    # --- Main Chart Panels ---
+    dcc.Loading(
+        id="loading-fsi",
+        type="circle",
+        children=[
             html.Div([
-                html.H2([
-                    "Variable-Level FSI", 
-                    info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
-                ]),
-                dcc.Graph(id='fig1'),
-                html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
-            ], style={"margin-bottom": "10px"}),
-
-            # Group-Level FSI
-            html.Div([
-                html.H2([
-                    "Group-Level FSI", 
-                    info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
-                ]),
-                dcc.Graph(id='fig2'),
-                html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
-            ]),
-
-            # --- Improved PnL Chart Section ---
-            html.Div([
-                html.H2([
-                    "PnL Chart with Regime Ribbons", 
-                    info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
-                ]),
-                dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
-
-                # Row for buttons
+                # Variable-Level FSI
                 html.Div([
-                    html.Button(
-                        "Download as Image",
-                        id="dl-pnl",
-                        n_clicks=0,
-                        className="download-btn",
-                        style={"margin-right": "auto"}  # Pushes the upload button to the far right
+                    html.H2([
+                        "Variable-Level FSI", 
+                        info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
+                    ]),
+                    dcc.Graph(id='fig1'),
+                    html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
+                ], style={"margin-bottom": "10px"}),
+
+                # Group-Level FSI
+                html.Div([
+                    html.H2([
+                        "Group-Level FSI", 
+                        info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
+                    ]),
+                    dcc.Graph(id='fig2'),
+                    html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
+                ]),
+
+                # --- Improved PnL Chart Section ---
+                html.Div([
+                    html.H2([
+                        "PnL Chart with Regime Ribbons", 
+                        info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
+                    ]),
+                    dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
+
+                    # Row for buttons
+                    html.Div([
+                        html.Button(
+                            "Download as Image",
+                            id="dl-pnl",
+                            n_clicks=0,
+                            className="download-btn",
+                            style={"margin-right": "auto"}  # Pushes the upload button to the far right
+                        ),
+                        dcc.Upload(
+                            id='upload-pnl',
+                            children=html.Button('Upload PnL File', className="download-btn", style={"background": "#666", "color": "#fff"}),
+                            accept='.xlsx,.csv',
+                            multiple=False,
+                            className="dash-uploader",
+                            style={"display": "inline-block", "margin-left": "auto"}
+                        )
+                    ],
+                        style={
+                            "display": "flex",
+                            "flexDirection": "row",
+                            "justifyContent": "space-between",
+                            "alignItems": "center",
+                            "width": "100%",
+                            "margin-bottom": "5px"
+                        }
                     ),
-                    dcc.Upload(
-                        id='upload-pnl',
-                        children=html.Button('Upload PnL File', className="download-btn", style={"background": "#666", "color": "#fff"}),
-                        accept='.xlsx,.csv',
-                        multiple=False,
-                        className="dash-uploader",
-                        style={"display": "inline-block", "margin-left": "auto"}
-                    )
-                ],
-                    style={
-                        "display": "flex",
-                        "flexDirection": "row",
-                        "justifyContent": "space-between",
-                        "alignItems": "center",
-                        "width": "100%",
-                        "margin-bottom": "5px"
-                    }
-                ),
 
-                # Message BELOW upload button, right aligned
-                html.Div(
-                    html.Span(id='upload-message', style={'color': 'red'}),
-                    style={"display": "flex", "flexDirection": "row", "justifyContent": "flex-end", "width": "100%"}
-                ),
+                    # Message BELOW upload button, right aligned
+                    html.Div(
+                        html.Span(id='upload-message', style={'color': 'red'}),
+                        style={"display": "flex", "flexDirection": "row", "justifyContent": "flex-end", "width": "100%"}
+                    ),
 
-                # Preview always below everything
-                html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
+                    # Preview always below everything
+                    html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
 
-            ], style={'margin-bottom': '30px'}),
-        ], style={'width': '95%', 'margin': 'auto'})
-    ]
-),
-html.Hr(),
+                ], style={'margin-bottom': '30px'}),
 
-# --- Forward-Looking & Regime Metrics ---
-html.Div([
-    html.H2([
-        "Forward-Looking & Regime Risk Metrics", 
-        info_icon("Regimes and probability forecasts based on current model results.")
-    ]),
-    # --- Improved Metrics Layout: regimes stacked at left, gauges side by side at right ---
+                # --- Two distribution charts, side by side (inside the main chart panel!) ---
+                html.Div([
+                    dcc.Graph(id='dist-pnl-range', style={"flex": "1", "minWidth": "380px", "height": "360px"}),
+                    dcc.Graph(id='dist-pnl-full', style={"flex": "1", "minWidth": "380px", "height": "360px"})
+                ], style={"display": "flex", "flexDirection": "row", "gap": "30px", "margin": "30px 0"}),
+
+            ], style={'width': '95%', 'margin': 'auto'})
+        ]
+    ),
+    html.Hr(),
+
+    # --- Forward-Looking & Regime Metrics ---
     html.Div([
-        # Left: Regime Cards stacked vertically
+        html.H2([
+            "Forward-Looking & Regime Risk Metrics", 
+            info_icon("Regimes and probability forecasts based on current model results.")
+        ]),
+        # --- Improved Metrics Layout: regimes stacked at left, gauges side by side at right ---
         html.Div([
+            # Left: Regime Cards stacked vertically
             html.Div([
-                html.H4([
-                    "Current Regime (Rule-Based):", 
-                    info_icon("Classified by FSI and thresholds.")
-                ]),
-                html.Div(
-                    id='current-regime',
-                    style={
-                        'font-size': '1.7em',
-                        'font-weight': 'bold',
-                        "margin-bottom": "12px"
-                    }
-                )
-            ], className="card-metric", style={"margin-bottom": "12px"}),
-            html.Div([
-                html.H4([
-                    "Current HMM Market Regime:", 
-                    info_icon("Market regime inferred by a Hidden Markov Model.")
-                ]),
-                html.Div(
-                    id='current-hmm',
-                    style={
-                        'font-size': '1.7em',
-                        'font-weight': 'bold'
-                    }
-                )
-            ], className="card-metric")
-        ], style={
-            "display": "flex",
-            "flexDirection": "column",
-            "flex": "1",
-            "gap": "10px",
-            "minWidth": "210px"
-        }),
+                html.Div([
+                    html.H4([
+                        "Current Regime (Rule-Based):", 
+                        info_icon("Classified by FSI and thresholds.")
+                    ]),
+                    html.Div(
+                        id='current-regime',
+                        style={
+                            'font-size': '1.7em',
+                            'font-weight': 'bold',
+                            "margin-bottom": "12px"
+                        }
+                    )
+                ], className="card-metric", style={"margin-bottom": "12px"}),
+                html.Div([
+                    html.H4([
+                        "Current HMM Market Regime:", 
+                        info_icon("Market regime inferred by a Hidden Markov Model.")
+                    ]),
+                    html.Div(
+                        id='current-hmm',
+                        style={
+                            'font-size': '1.7em',
+                            'font-weight': 'bold'
+                        }
+                    )
+                ], className="card-metric")
+            ], style={
+                "display": "flex",
+                "flexDirection": "column",
+                "flex": "1",
+                "gap": "10px",
+                "minWidth": "210px"
+            }),
 
-        # Right: Gauge Cards (side by side)
-        html.Div([
+            # Right: Gauge Cards (side by side)
             html.Div([
-                dcc.Graph(
-                    id='prob-red-logit',
-                    config={'displayModeBar': False},
-                    style={'height': '110px', 'minWidth': "210px", "marginRight": "10px"}
-                )
-            ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
-            html.Div([
-                dcc.Graph(
-                    id='prob-red-xgb',
-                    config={'displayModeBar': False},
-                    style={'height': '110px', 'minWidth': "210px"}
-                )
-            ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
-        ], style={
-            "display": "flex",
-            "flexDirection": "row",
-            "gap": "12px",
-            "flex": "2",
-            "alignItems": "center"
-        })
-    ], className="metrics-row", style={"gap": "24px", "alignItems": "center"}),
+                html.Div([
+                    dcc.Graph(
+                        id='prob-red-logit',
+                        config={'displayModeBar': False},
+                        style={'height': '110px', 'minWidth': "210px", "marginRight": "10px"}
+                    )
+                ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
+                html.Div([
+                    dcc.Graph(
+                        id='prob-red-xgb',
+                        config={'displayModeBar': False},
+                        style={'height': '110px', 'minWidth': "210px"}
+                    )
+                ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
+            ], style={
+                "display": "flex",
+                "flexDirection": "row",
+                "gap": "12px",
+                "flex": "2",
+                "alignItems": "center"
+            })
+        ], className="metrics-row", style={"gap": "24px", "alignItems": "center"}),
 
-    html.H4([
-        "Historical Regime Transition Matrix", 
-        info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
-    ]),
-    dcc.Graph(id='regime-transition-matrix'),
-], style={'width': '95%', 'margin': 'auto'}),
+        html.H4([
+            "Historical Regime Transition Matrix", 
+            info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
+        ]),
+        dcc.Graph(id='regime-transition-matrix'),
+    ], style={'width': '95%', 'margin': 'auto'}),
 
-dcc.Download(id="download-image"),
+    dcc.Download(id="download-image"),
 ], style={
     'font-family': 'Segoe UI, Arial, sans-serif',
     'background-color': '#f7f8fa',
     "padding-bottom": "35px"
 })
 
+# --- Two distribution charts, side by side ---
+html.Div([
+    dcc.Graph(id='dist-pnl-range', style={"flex": "1", "minWidth": "380px", "height": "360px"}),
+    dcc.Graph(id='dist-pnl-full', style={"flex": "1", "minWidth": "380px", "height": "360px"})
+], style={"display": "flex", "flexDirection": "row", "gap": "30px", "margin": "30px 0"}),
+
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
 @app.callback(
-    [Output('fsi-store', 'data'), Output('run-message', 'children'), Output('run-btn', 'disabled'), Output('timestamp-label', 'children')],
+    [Output('fsi-store', 'data'), 
+     Output('run-message', 'children'), 
+     Output('run-btn', 'disabled'), 
+     Output('timestamp-label', 'children')],
     Input('run-btn', 'n_clicks'),
     prevent_initial_call=True
 )
@@ -740,6 +756,48 @@ def download_figure(dl1, dl2, dl3, fig1, fig2, fig_pnl):
         fig = go.Figure(fig_pnl)
     # Export as PNG
     return dcc.send_bytes(fig.to_image(format="png"), filename=f"{btn_id}.png")
+
+
+@app.callback(
+    [Output('dist-pnl-range', 'figure'),
+     Output('dist-pnl-full', 'figure')],
+    Input('upload-pnl', 'contents'),
+    State('upload-pnl', 'filename')
+)
+def update_pnl_distributions(upload_contents, upload_filename):
+    if upload_contents is None:
+        # Return empty figures if nothing uploaded
+        return go.Figure(), go.Figure()
+    import io, base64
+    content_type, content_string = upload_contents.split(',')
+    decoded = base64.b64decode(content_string)
+    if upload_filename.lower().endswith('.csv'):
+        pnl_df = pd.read_csv(io.BytesIO(decoded))
+    else:
+        pnl_df = pd.read_excel(io.BytesIO(decoded))
+    # Normalize column names for case-insensitive access
+    pnl_df.columns = [c.strip() for c in pnl_df.columns]
+    col_map = {c.lower(): c for c in pnl_df.columns}
+    if not {'date', 'p/l'}.issubset(col_map):
+        return go.Figure(), go.Figure()
+    pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
+    pnl_df = pnl_df.sort_values('Date')
+    pnl_series = pnl_df[col_map['p/l']]
+
+    # Date range string for chart subtitle
+    if not pnl_df.empty:
+        date0 = pnl_df['Date'].min().strftime("%b-%Y")
+        date1 = pnl_df['Date'].max().strftime("%b-%Y")
+        period_title = f"{date0} to {date1}"
+    else:
+        period_title = ""
+
+    fig_range = plot_distribution_plotly(pnl_series, period_title, pnl_range=(-0.03, 0.03))
+    fig_full = plot_distribution_plotly(pnl_series, period_title)
+
+    return fig_range, fig_full
+
+
 
 if __name__ == "__main__":
     import os
