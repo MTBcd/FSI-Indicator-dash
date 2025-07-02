@@ -263,6 +263,7 @@ import base64
 import io
 import diskcache
 import time
+import numpy as np
 
 # --- Your framework imports ---
 from main import load_configuration, merge_data
@@ -317,36 +318,47 @@ app.layout = html.Div([
     html.Span(id='run-message', style={'color': 'green', 'margin-left': '20px', "font-size": "1em"}),
     dcc.Store(id='fsi-store'),
 
-    # --- Main Chart Panels ---
-    dcc.Loading(
-        id="loading-fsi",
-        type="circle",
-        children=[
+# --- Main Chart Panels ---
+dcc.Loading(
+    id="loading-fsi",
+    type="circle",
+    children=[
+        html.Div([
+            # Variable-Level FSI
             html.Div([
-                html.Div([
-                    html.H2([
-                        "Variable-Level FSI", 
-                        info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
-                    ]),
-                    dcc.Graph(id='fig1'),
-                    html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
-                ], style={"margin-bottom": "10px"}),
-                html.Div([
-                    html.H2([
-                        "Group-Level FSI", 
-                        info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
-                    ]),
-                    dcc.Graph(id='fig2'),
-                    html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
+                html.H2([
+                    "Variable-Level FSI", 
+                    info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
                 ]),
-                html.Div([
-                    html.H2([
-                        "PnL Chart with Regime Ribbons", 
-                        info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
-                    ]),
-                    dcc.Graph(id='fig-pnl'),
-                    html.Button("Download as Image", id="dl-pnl", n_clicks=0, className="download-btn")
+                dcc.Graph(id='fig1'),
+                html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
+            ], style={"margin-bottom": "10px"}),
+
+            # Group-Level FSI
+            html.Div([
+                html.H2([
+                    "Group-Level FSI", 
+                    info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
                 ]),
+                dcc.Graph(id='fig2'),
+                html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
+            ]),
+
+            # --- Improved PnL Chart Section ---
+            html.Div([
+                html.H2([
+                    "PnL Chart with Regime Ribbons", 
+                    info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
+                ]),
+                # Chart and download button in flex row
+                html.Div([
+                    dcc.Graph(id='fig-pnl', style={"flex": "4"}),
+                    html.Div(
+                        html.Button("Download as Image", id="dl-pnl", n_clicks=0, className="download-btn"),
+                        style={"display": "flex", "justifyContent": "flex-end", "alignItems": "flex-start", "flex": "1"}
+                    )
+                ], style={"display": "flex", "flexDirection": "row", "alignItems": "flex-start", "gap": "10px"}),
+                # Upload and preview section below
                 html.Div([
                     html.Label([
                         "Upload PnL file (.xlsx/.csv):", 
@@ -362,17 +374,21 @@ app.layout = html.Div([
                     html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
                     html.Span(id='upload-message', style={'color': 'red', 'margin-left': '20px'})
                 ], style={'margin-bottom': '30px'})
-            ], style={'width': '95%', 'margin': 'auto'})
-        ]
-    ),
-    html.Hr(),
+            ]),
+        ], style={'width': '95%', 'margin': 'auto'})
+    ]
+),
+html.Hr(),
 
-    # --- Forward-Looking & Regime Metrics ---
+# --- Forward-Looking & Regime Metrics ---
+html.Div([
+    html.H2([
+        "Forward-Looking & Regime Risk Metrics", 
+        info_icon("Regimes and probability forecasts based on current model results.")
+    ]),
+    # --- Improved Metrics Layout: 2x2 grid, regimes stacked, gauges side by side ---
     html.Div([
-        html.H2([
-            "Forward-Looking & Regime Risk Metrics", 
-            info_icon("Regimes and probability forecasts based on current model results.")
-        ]),
+        # Regime Cards (stacked vertically)
         html.Div([
             html.Div([
                 html.H4([
@@ -380,43 +396,48 @@ app.layout = html.Div([
                     info_icon("Classified by FSI and thresholds.")
                 ]),
                 html.Div(id='current-regime', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px"})
-            ], className="card-metric"),
+            ], className="card-metric", style={"margin-bottom": "12px"}),
             html.Div([
                 html.H4([
-                    "Current HMM Market State:", 
+                    "Current HMM Market Regime:", 
                     info_icon("Market regime inferred by a Hidden Markov Model.")
                 ]),
-                html.Div(id='current-hmm', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px", "color": "#2d3436"})
-            ], className="card-metric"),
-            html.Div([
-                html.H4([
-                    "Probability of 'Red' Regime (Logit):", 
-                    info_icon("20-day ahead probability, logistic regression.")
-                ]),
-                dcc.Graph(id='prob-red-logit', config={'displayModeBar': False}, style={'height': '140px', 'width': '98%'})
-            ], className="card-metric"),
-            html.Div([
-                html.H4([
-                    "Probability of 'Red' Regime (XGBoost):", 
-                    info_icon("20-day ahead probability, XGBoost.")
-                ]),
-                dcc.Graph(id='prob-red-xgb', config={'displayModeBar': False}, style={'height': '140px', 'width': '98%'})
-            ], className="card-metric"),
-        ], className="metrics-row"),
-        html.H4([
-            "Historical Regime Transition Matrix", 
-            info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
-        ]),
-        dcc.Graph(id='regime-transition-matrix'),
-    ], style={'width': '95%', 'margin': 'auto'}),
+                html.Div(id='current-hmm', style={'font-size': '1.7em', 'font-weight': 'bold', "margin-bottom": "8px"})
+            ], className="card-metric")
+        ], style={"display": "flex", "flexDirection": "column", "flex": "1", "gap": "10px", "minWidth": "210px"}),
 
-    dcc.Download(id="download-image"),
+        # Gauge Cards (side by side)
+        html.Div([
+            html.Div([
+                dcc.Graph(
+                    id='prob-red-logit', 
+                    config={'displayModeBar': False},
+                    style={'height': '110px', 'minWidth': "210px", "marginRight": "10px"}
+                )
+            ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
+            html.Div([
+                dcc.Graph(
+                    id='prob-red-xgb', 
+                    config={'displayModeBar': False},
+                    style={'height': '110px', 'minWidth': "210px"}
+                )
+            ], className="card-metric", style={"flex": "1", "maxWidth": "260px"}),
+        ], style={"display": "flex", "flexDirection": "row", "gap": "12px", "flex": "2"})
+    ], className="metrics-row", style={"gap": "18px"}),
+
+    html.H4([
+        "Historical Regime Transition Matrix", 
+        info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
+    ]),
+    dcc.Graph(id='regime-transition-matrix'),
+], style={'width': '95%', 'margin': 'auto'}),
+
+dcc.Download(id="download-image"),
 ], style={
     'font-family': 'Segoe UI, Arial, sans-serif',
     'background-color': '#f7f8fa',
     "padding-bottom": "35px"
 })
-
 
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
 @app.callback(
@@ -490,23 +511,37 @@ def run_full_pipeline(n_clicks):
 def update_all_from_store(data):
     if data is None:
         raise dash.exceptions.PreventUpdate
+
     variable_contribs = pd.read_json(io.StringIO(data["variable_contribs"]), orient="split")
     grouped_contribs = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
     df = pd.read_json(io.StringIO(data["df"]), orient="split")
+
     fig1 = plot_group_contributions_with_regime(variable_contribs)
     fig2 = plot_grouped_contributions(grouped_contribs)
     curr_regime = get_current_regime(df)
     curr_regime_html = regime_color_text(curr_regime)
-    hmm_state, _, _ = run_hmm(df, n_states=4, columns=[c for c in df.columns if 'FSI' in c or 'dev' in c or 'stress' in c or 'OAS' in c])
-    hmm_state_str = html.Span(f"State {hmm_state}", style={'color': "#636e72", "fontWeight": "bold"})
-    prob_logit, _, _ = predict_regime_probability(df, model_type='logit', lookahead=20)
-    prob_xgb, _, _ = predict_regime_probability(df, model_type='xgboost', lookahead=20)
+
+    # --- Improved: Map HMM state to regime color ---
+    hmm_state, _, hmm_states_series = run_hmm(
+        df, n_states=4,
+        columns=[c for c in df.columns if 'FSI' in c or 'dev' in c or 'stress' in c or 'OAS' in c]
+    )
+
+    def hmm_state_to_regime(state):
+        # Choose the mapping that fits your application. This is a common mapping by state number.
+        mapping = {0: "Green", 1: "Yellow", 2: "Amber", 3: "Red"}
+        return mapping.get(state, f"Unknown ({state})")
+
+    hmm_regime = hmm_state_to_regime(hmm_state)
+    hmm_regime_html = regime_color_text(hmm_regime)
+
+    # --- Improved: Gauge titles, font, margin ---
     def make_prob_gauge(prob, label):
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=prob * 100,
             domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': label, "font": {"size": 15}},
+            title={'text': label, "font": {"size": 13}},  # Smaller title
             gauge={
                 'axis': {'range': [0, 100]},
                 'bar': {'color': "#e74c3c" if prob > 0.6 else "#f1c40f" if prob > 0.3 else "#27ae60"},
@@ -518,36 +553,61 @@ def update_all_from_store(data):
             },
             number={'suffix': "%"}
         ))
-        fig.update_layout(margin=dict(l=8, r=8, t=28, b=12), paper_bgcolor="#f7f8fa")
+        fig.update_layout(
+            margin=dict(l=10, r=10, t=38, b=14),  # More space at the top
+            paper_bgcolor="#f7f8fa",
+            height=170  # Explicit height
+        )
         return fig
-    fig_prob_logit = make_prob_gauge(prob_logit, "Logit P(Red in 20d)")
-    fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red in 20d)")
+
+    prob_logit, _, _ = predict_regime_probability(df, model_type='logit', lookahead=20)
+    prob_xgb, _, _ = predict_regime_probability(df, model_type='xgboost', lookahead=20)
+    fig_prob_logit = make_prob_gauge(prob_logit, "Logit P(Red)")
+    fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red)")
+
+    # --- Improved: Transition Matrix ---
     trans_matrix = compute_transition_matrix(df['Regime'])
     regimes = list(REGIME_COLORS.keys())
     trans_matrix = trans_matrix.reindex(index=regimes, columns=regimes, fill_value=0)
-    z = trans_matrix.values
-    x = list(trans_matrix.columns)
-    y = list(trans_matrix.index)
-    hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
-    fig_matrix = go.Figure(data=go.Heatmap(
-        z=z,
-        x=x,
-        y=y,
-        colorscale='RdYlGn',
-        reversescale=True,
-        hoverinfo='text',
-        text=hovertext,
-        zmin=0, zmax=1,
-        colorbar=dict(title="Prob.")
-    ))
-    fig_matrix.update_layout(
-        title="Regime Transition Matrix<br>(Rows: FROM, Cols: TO)",
-        xaxis_title="To Regime",
-        yaxis_title="From Regime",
-        margin=dict(l=40, r=20, t=40, b=40),
-        plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
+
+    # Check for trivial matrix (identity)
+    matrix_is_trivial = (
+        (trans_matrix.values == np.eye(len(regimes))).all() or
+        (np.count_nonzero(trans_matrix.values) == len(regimes))
     )
-    return fig1, fig2, curr_regime_html, hmm_state_str, fig_prob_logit, fig_prob_xgb, fig_matrix
+
+    if matrix_is_trivial:
+        fig_matrix = go.Figure()
+        fig_matrix.update_layout(
+            title="Not enough regime transitions in data.",
+            plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa",
+            xaxis_visible=False, yaxis_visible=False
+        )
+    else:
+        z = trans_matrix.values
+        x = list(trans_matrix.columns)
+        y = list(trans_matrix.index)
+        hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
+        fig_matrix = go.Figure(data=go.Heatmap(
+            z=z,
+            x=x,
+            y=y,
+            colorscale='RdYlGn',
+            reversescale=True,
+            hoverinfo='text',
+            text=hovertext,
+            zmin=0, zmax=1,
+            colorbar=dict(title="Prob.")
+        ))
+        fig_matrix.update_layout(
+            title="Regime Transition Matrix<br>(Rows: FROM, Cols: TO)",
+            xaxis_title="To Regime",
+            yaxis_title="From Regime",
+            margin=dict(l=40, r=20, t=40, b=40),
+            plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
+        )
+
+    return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
 @app.callback(
