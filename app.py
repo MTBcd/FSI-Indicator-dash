@@ -350,26 +350,45 @@ dcc.Loading(
                     "PnL Chart with Regime Ribbons", 
                     info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
                 ]),
-                # Chart
                 dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
-                # Buttons row (Download + Upload) right-aligned below the chart
+
+                # Row for buttons
                 html.Div([
-                    html.Div([], style={"flex": "1"}),  # left filler
-                    html.Div([
-                        html.Button("Download as Image", id="dl-pnl", n_clicks=0, className="download-btn", style={"margin-right": "10px"}),
-                        dcc.Upload(
-                            id='upload-pnl',
-                            children=html.Button('Upload PnL File', className="download-btn", style={"background": "#aaa", "color": "#fff"}),
-                            accept='.xlsx,.csv',
-                            multiple=False,
-                            className="dash-uploader",
-                            style={"display": "inline-block"}
-                        ),
-                    ], style={"display": "flex", "justifyContent": "flex-end", "alignItems": "center"})
-                ], style={"display": "flex", "flexDirection": "row", "alignItems": "center", "margin-bottom": "10px"}),
-                # File preview & message
+                    html.Button(
+                        "Download as Image",
+                        id="dl-pnl",
+                        n_clicks=0,
+                        className="download-btn",
+                        style={"margin-right": "auto"}  # Pushes the upload button to the far right
+                    ),
+                    dcc.Upload(
+                        id='upload-pnl',
+                        children=html.Button('Upload PnL File', className="download-btn", style={"background": "#666", "color": "#fff"}),
+                        accept='.xlsx,.csv',
+                        multiple=False,
+                        className="dash-uploader",
+                        style={"display": "inline-block", "margin-left": "auto"}
+                    )
+                ],
+                    style={
+                        "display": "flex",
+                        "flexDirection": "row",
+                        "justifyContent": "space-between",
+                        "alignItems": "center",
+                        "width": "100%",
+                        "margin-bottom": "5px"
+                    }
+                ),
+
+                # Message BELOW upload button, right aligned
+                html.Div(
+                    html.Span(id='upload-message', style={'color': 'red'}),
+                    style={"display": "flex", "flexDirection": "row", "justifyContent": "flex-end", "width": "100%"}
+                ),
+
+                # Preview always below everything
                 html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
-                html.Span(id='upload-message', style={'color': 'red', 'margin-left': '20px'}),
+
             ], style={'margin-bottom': '30px'}),
         ], style={'width': '95%', 'margin': 'auto'})
     ]
