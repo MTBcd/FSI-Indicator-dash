@@ -350,31 +350,27 @@ dcc.Loading(
                     "PnL Chart with Regime Ribbons", 
                     info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
                 ]),
-                # Chart and download button in flex row
+                # Chart
+                dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
+                # Buttons row (Download + Upload) right-aligned below the chart
                 html.Div([
-                    dcc.Graph(id='fig-pnl', style={"flex": "4"}),
-                    html.Div(
-                        html.Button("Download as Image", id="dl-pnl", n_clicks=0, className="download-btn"),
-                        style={"display": "flex", "justifyContent": "flex-end", "alignItems": "flex-start", "flex": "1"}
-                    )
-                ], style={"display": "flex", "flexDirection": "row", "alignItems": "flex-start", "gap": "10px"}),
-                # Upload and preview section below
-                html.Div([
-                    html.Label([
-                        "Upload PnL file (.xlsx/.csv):", 
-                        info_icon("Date and P/L columns required (case-insensitive).")
-                    ]),
-                    dcc.Upload(
-                        id='upload-pnl',
-                        children=html.Button('Upload PnL File'),
-                        accept='.xlsx,.csv',
-                        multiple=False,
-                        className="dash-uploader"
-                    ),
-                    html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
-                    html.Span(id='upload-message', style={'color': 'red', 'margin-left': '20px'})
-                ], style={'margin-bottom': '30px'})
-            ]),
+                    html.Div([], style={"flex": "1"}),  # left filler
+                    html.Div([
+                        html.Button("Download as Image", id="dl-pnl", n_clicks=0, className="download-btn", style={"margin-right": "10px"}),
+                        dcc.Upload(
+                            id='upload-pnl',
+                            children=html.Button('Upload PnL File', className="download-btn", style={"background": "#aaa", "color": "#fff"}),
+                            accept='.xlsx,.csv',
+                            multiple=False,
+                            className="dash-uploader",
+                            style={"display": "inline-block"}
+                        ),
+                    ], style={"display": "flex", "justifyContent": "flex-end", "alignItems": "center"})
+                ], style={"display": "flex", "flexDirection": "row", "alignItems": "center", "margin-bottom": "10px"}),
+                # File preview & message
+                html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
+                html.Span(id='upload-message', style={'color': 'red', 'margin-left': '20px'}),
+            ], style={'margin-bottom': '30px'}),
         ], style={'width': '95%', 'margin': 'auto'})
     ]
 ),
