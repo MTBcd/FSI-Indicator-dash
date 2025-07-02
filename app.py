@@ -464,12 +464,12 @@ app.layout = html.Div([
                     dcc.Graph(
                         id='prob-red-logit',
                         config={'displayModeBar': False},
-                        style={'height': '210px', 'minWidth': "300px", "marginRight": "50px"}
+                        style={'height': '220px', 'minWidth': "300px", "marginRight": "50px"}
                     ),
                     dcc.Graph(
                         id='prob-red-xgb',
                         config={'displayModeBar': False},
-                        style={'height': '210px', 'minWidth': "300px"}
+                        style={'height': '220px', 'minWidth': "300px"}
                     )
                 ], style={
                     "display": "flex",
@@ -652,6 +652,11 @@ def update_all_from_store(data):
 
     # --- Improved: Transition Matrix ---
     regime_series = df['Regime'].astype(str).fillna("NA").reset_index(drop=True)
+
+    print("Regime counts:", regime_series.value_counts())
+    print("Transitions detected:", (regime_series != regime_series.shift(1)).sum())
+    print("First 20 regime values:", regime_series[:20].tolist())
+
     # Remove NAs and constant stretches
     valid_idx = regime_series != "NA"
     regime_series = regime_series[valid_idx]
@@ -859,7 +864,6 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     fig_range = plot_distribution_plotly(pnl_series, period_title, pnl_range=(-0.03, 0.03))
     fig_full = plot_distribution_plotly(pnl_series, period_title)
     return fig_range, fig_full
-
 
 
 

@@ -399,63 +399,49 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                 opacity=0.5,
                 row="all"
             )
-            fig.add_annotation(
-                x=d, y=0.91,
-                xref='x', yref='paper',
-                text=str(d.year),
-                showarrow=False,
-                font=dict(size=14, color='black', family='Arial'),
-                xanchor="center",
-                align="center",
-                opacity=0.6,
-                bgcolor="rgba(255,255,255,0.1)",
-                bordercolor="black",
-                borderwidth=0.5,
-                borderpad=2,
-            )
 
         # Add "NO DATA" annotation before 2019
         fig.add_annotation(
-            x=pd.to_datetime("2018-08-31"),  # Position the annotation at the end of 2018
-            y=0,  # Position it on the zero axis
+            x=pd.to_datetime("2018-08-31"),
+            y=0,
             xref='x',
             yref='y',
             text="PRE-<br>AQUAE",
             showarrow=False,
-            font=dict(size=16, color='red'),  # Red color for the text
+            font=dict(size=16, color='red'),
             align="center",
-            bgcolor="rgba(255, 255, 255, 0.5)",  # Optional background color
+            bgcolor="rgba(255, 255, 255, 0.5)",
             bordercolor="red",
             borderwidth=1,
             borderpad=4,
         )
 
         fig.add_annotation(
-            x=pd.to_datetime("2023-01-01"),  # Position the annotation at the end of 2018
-            y=-0.18,  # Adjust this value to position it below the chart
+            x=pd.to_datetime("2023-01-01"),
+            y=-0.18,
             xref='x',
-            yref='paper',  # Use 'paper' to position relative to the entire plot area
+            yref='paper',
             text="New Risk<br>Control<br>Implemented",
             showarrow=False,
-            font=dict(size=12, color='#3096B9'),  # Color for the text
+            font=dict(size=12, color='#3096B9'),
             align="center",
             bordercolor="red",
             borderwidth=1,
             borderpad=4,
-            bgcolor="rgba(255, 255, 255, 0.5)"  # Optional background color for better visibility
+            bgcolor="rgba(255, 255, 255, 0.5)"
         )
 
         # Add target VaR lines
         x_start = pnl_series.index.min()
         x_end = pnl_series.index.max()
-        custom_color_dark = '#3096B9'  # Define your custom color
+        custom_color_dark = '#3096B9'
 
         fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="3%", annotation_position="top right")
         fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="-3%", annotation_position="bottom right")
 
+        # Improved adaptive date formatting for x-axis
         fig.update_layout(
             height=600,
-            # title="PnL Scatter Plot with FSI Regimes",
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
@@ -465,7 +451,11 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                 showgrid=True,
                 gridwidth=1.2,
                 gridcolor='black',
-                tickformat='%Y'
+                tickformatstops=[
+                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),   # up to ~1 month: 01 Jan 2024
+                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b %Y"),  # <1yr: Jan 2024
+                    dict(dtickrange=[1000 * 60 * 60 * 24 * 366, None], value="%Y")           # 1+yr: 2024
+                ]
             ),
             yaxis=dict(
                 title="PnL",
@@ -581,7 +571,7 @@ def plot_distribution_plotly(pnl_values, period_title, pnl_range=None):
         margin=dict(l=50, r=110, t=35, b=40),
         legend=dict(
             orientation="h",
-            yanchor="bottom", y=-0.22,
+            yanchor="bottom", y=-0.3,
             xanchor="center", x=0.5,
             font=dict(size=11, family="Arial")
         ),
