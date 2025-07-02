@@ -416,9 +416,8 @@ app.layout = html.Div([
             "Forward-Looking & Regime Risk Metrics",
             info_icon("Regimes and probability forecasts based on current model results.")
         ]),
-        # --- ROW: Regime stack (left), gauges (right, vertically centered) ---
         html.Div([
-            html.Div([   # LEFT COLUMN: Regime cards stacked vertically
+            html.Div([   # LEFT COLUMN
                 html.Div([
                     html.H4([
                         "Current Regime (Rule-Based):",
@@ -451,20 +450,26 @@ app.layout = html.Div([
                 "flexDirection": "column",
                 "justifyContent": "flex-start",
                 "minWidth": "260px",
-                "minHeight": "260px",   # <-- Ensure the gauges can be vertically centered to both regime cards
-                "marginRight": "50px"
+                "minHeight": "260px",
+                "marginRight": "60px"
             }),
-            html.Div([    # RIGHT COLUMN: Gauges, centered to full regime stack
+            html.Div([
+                html.Div([
+                    html.H4([
+                        "Probability of Red Regime",
+                        info_icon("Predicted probability of entering a high-risk (Red) regime in the next lookahead window, based on current market features.")
+                    ], style={"margin-bottom": "18px", "text-align": "center"})
+                ]),
                 html.Div([
                     dcc.Graph(
                         id='prob-red-logit',
                         config={'displayModeBar': False},
-                        style={'height': '140px', 'minWidth': "230px", "marginRight": "20px"}
+                        style={'height': '210px', 'minWidth': "300px", "marginRight": "50px"}
                     ),
                     dcc.Graph(
                         id='prob-red-xgb',
                         config={'displayModeBar': False},
-                        style={'height': '140px', 'minWidth': "230px"}
+                        style={'height': '210px', 'minWidth': "300px"}
                     )
                 ], style={
                     "display": "flex",
@@ -473,14 +478,15 @@ app.layout = html.Div([
                 }),
             ], style={
                 "display": "flex",
+                "flexDirection": "column",
                 "alignItems": "center",
                 "flex": "1"
             })
         ], style={
             "display": "flex",
             "flexDirection": "row",
-            "alignItems": "center",  # Vertical align: center
-            "gap": "20px"
+            "alignItems": "center",
+            "gap": "65px"
         }),
         html.H4([
             "Historical Regime Transition Matrix",
@@ -645,46 +651,62 @@ def update_all_from_store(data):
     fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red)")
 
     # --- Improved: Transition Matrix ---
-    trans_matrix = compute_transition_matrix(df['Regime'])
-    print(df['Regime'].tail(60))
-    regimes = list(REGIME_COLORS.keys())
-    trans_matrix = trans_matrix.reindex(index=regimes, columns=regimes, fill_value=0)
-
-    # Improved trivial-matrix check: look for actual regime switches
-    off_diag = trans_matrix.values.copy()
-    np.fill_diagonal(off_diag, 0)
-    off_diag_sum = off_diag.sum()
-
-    if off_diag_sum < 1e-8:  # No regime changes
+    regime_series = df['Regime'].astype(str).fillna("NA").reset_index(drop=True)
+    # Remove NAs and constant stretches
+    valid_idx = regime_series != "NA"
+    regime_series = regime_series[valid_idx]
+    if regime_series.nunique() < 2:
+        # Only one regime present
         fig_matrix = go.Figure()
         fig_matrix.update_layout(
-            title="Only self-transitions detected (no regime changes in sample).",
+            title="Only one regime found in data (no regime changes).",
             plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa",
             xaxis_visible=False, yaxis_visible=False
         )
     else:
-        z = trans_matrix.values
-        x = list(trans_matrix.columns)
-        y = list(trans_matrix.index)
-        hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
-        fig_matrix = go.Figure(data=go.Heatmap(
-            z=z,
-            x=x,
-            y=y,
-            colorscale='RdYlGn',
-            reversescale=True,
-            hoverinfo='text',
-            text=hovertext,
-            zmin=0, zmax=1,
-            colorbar=dict(title="Prob.")
-        ))
-        fig_matrix.update_layout(
-            title="Regime Transition Matrix<br>(Rows: FROM, Cols: TO)",
-            xaxis_title="To Regime",
-            yaxis_title="From Regime",
-            margin=dict(l=40, r=20, t=40, b=40),
-            plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
-        )
+        # Compute transitions, check for actual off-diagonal transitions
+        matrix = compute_transition_matrix(regime_series)
+        regimes = list(REGIME_COLORS.keys())
+        matrix = matrix.reindex(index=regimes, columns=regimes, fill_value=0)
+        off_diag = matrix.values.copy()
+        np.fill_diagonal(off_diag, 0)
+        off_diag_sum = off_diag.sum()
+
+        # DEBUG PRINT for you in deployment logs
+        print("Transition matrix:\n", matrix)
+        print("Off-diagonal sum:", off_diag_sum)
+        print("Regime counts:", regime_series.value_counts())
+
+        if off_diag_sum < 1e-8:
+            fig_matrix = go.Figure()
+            fig_matrix.update_layout(
+                title="Only self-transitions detected (no regime changes in sample).",
+                plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa",
+                xaxis_visible=False, yaxis_visible=False
+            )
+        else:
+            z = matrix.values
+            x = list(matrix.columns)
+            y = list(matrix.index)
+            hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
+            fig_matrix = go.Figure(data=go.Heatmap(
+                z=z,
+                x=x,
+                y=y,
+                colorscale='RdYlGn',
+                reversescale=True,
+                hoverinfo='text',
+                text=hovertext,
+                zmin=0, zmax=1,
+                colorbar=dict(title="Prob.")
+            ))
+            fig_matrix.update_layout(
+                title="Regime Transition Matrix<br>(Rows: FROM, Cols: TO)",
+                xaxis_title="To Regime",
+                yaxis_title="From Regime",
+                margin=dict(l=40, r=20, t=40, b=40),
+                plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
+            )
 
     return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix
 
