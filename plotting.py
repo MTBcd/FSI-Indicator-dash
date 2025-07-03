@@ -352,25 +352,24 @@ def plot_grouped_contributions(contribs_by_group):
 
 
 def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
-    """Plot PnL scatter with *identical* regime background as FSI group chart, with bold blue axes."""
+    """Plot PnL scatter with *identical* regime background as FSI group chart, with bold blue axes, percent Y-ticks."""
+    import numpy as np
+
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
         regimes = regime_from_smooth_weight(smooth_weight)
 
-        # Pull / align the PnL series
+        # Align PnL
         if 'Date' in pnl_df.columns:
             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
         pnl_df.index = pd.to_datetime(pnl_df.index)
         pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
 
-        fig = make_subplots(
-            rows=1, cols=1,
-            shared_xaxes=True
-        )
+        fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
-        # Add PnL scatter
+        # PnL Scatter
         fig.add_trace(
             go.Scattergl(
                 x=pnl_series.index,
@@ -382,14 +381,12 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             row=1, col=1
         )
 
-        # Add regime ribbons and events (unchanged)
         add_regime_ribbons(fig, fsi, regimes=regimes, row=1, col=1)
         add_event_annotations(fig, market_events, event_heights=event_heights_pnl)
 
-        # Vertical lines for every Jan 1st
+        # Jan 1st vertical lines
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
         year_starts = [d for d in year_starts if d >= pnl_series.index.min() and d <= pnl_series.index.max()]
-
         for d in year_starts:
             fig.add_vline(
                 x=d,
@@ -399,12 +396,11 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                 row="all"
             )
 
-        # Annotations (unchanged)
+        # Annotations
         fig.add_annotation(
             x=pd.to_datetime("2018-08-31"),
             y=0,
-            xref='x',
-            yref='y',
+            xref='x', yref='y',
             text="PRE-<br>AQUAE",
             showarrow=False,
             font=dict(size=16, color='red'),
@@ -417,8 +413,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         fig.add_annotation(
             x=pd.to_datetime("2023-01-01"),
             y=-0.18,
-            xref='x',
-            yref='paper',
+            xref='x', yref='paper',
             text="New Risk<br>Control<br>Implemented",
             showarrow=False,
             font=dict(size=12, color='#3096B9'),
@@ -434,7 +429,15 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="3%", annotation_position="top right")
         fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="-3%", annotation_position="bottom right")
 
-        # Adaptive date formatting for x-axis (unchanged)
+        # --- Y-axis: 3% spacing, percent, bold, dark blue ---
+        y_min = float(np.nanmin(pnl_series))
+        y_max = float(np.nanmax(pnl_series))
+        max_abs = max(abs(y_min), abs(y_max), 0.06)  # At least +/-6%
+        max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100  # Round up to next 3%
+        yticks = np.arange(-max_abs, max_abs + 0.001, 0.03)
+        yticktext = [f"<b>{v*100:.1f}%</b>" for v in yticks]
+
+        # --- X-axis: Bold, dark blue, Jan-2021 style, adaptive zoom ---
         fig.update_layout(
             height=600,
             template="plotly_white",
@@ -452,7 +455,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                 gridcolor='black',
                 tickformatstops=[
                     dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b %Y"),
+                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),  # Jan-2021
                     dict(dtickrange=[1000 * 60 * 60 * 24 * 366, None], value="%Y")
                 ]
             ),
@@ -462,16 +465,16 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                     font=dict(family="Arial", size=16, color="#163A7B")
                 ),
                 tickfont=dict(family="Arial", size=15, color="#163A7B"),
+                tickvals=yticks,
+                ticktext=yticktext,
                 showgrid=True,
                 gridwidth=1,
                 gridcolor='lightgray',
-                tickformat=".1%"  # Show percent, 1 decimal
+                range=[yticks[0], yticks[-1]]
             )
         )
 
-        y_min = float(np.nanmin(pnl_series))
-        y_max = float(np.nanmax(pnl_series))
-        fix_axis_minus(fig, y_min, y_max)
+        fix_axis_minus(fig, yticks[0], yticks[-1])
 
         return fig
     except Exception as e:
