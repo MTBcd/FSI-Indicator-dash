@@ -440,9 +440,11 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
-                title="<b>Date</b>",
-                titlefont=dict(family="Arial", size=16, color="#163A7B"),   # bold dark blue
-                tickfont=dict(family="Arial", size=15, color="#163A7B"),    # bold dark blue
+                title=dict(
+                    text="<b>Date</b>",
+                    font=dict(family="Arial", size=16, color="#163A7B")
+                ),
+                tickfont=dict(family="Arial", size=15, color="#163A7B"),
                 rangeslider=dict(visible=False),
                 type='date',
                 showgrid=True,
@@ -455,8 +457,10 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                 ]
             ),
             yaxis=dict(
-                title="<b>PnL (%)</b>",
-                titlefont=dict(family="Arial", size=16, color="#163A7B"),
+                title=dict(
+                    text="<b>PnL (%)</b>",
+                    font=dict(family="Arial", size=16, color="#163A7B")
+                ),
                 tickfont=dict(family="Arial", size=15, color="#163A7B"),
                 showgrid=True,
                 gridwidth=1,
