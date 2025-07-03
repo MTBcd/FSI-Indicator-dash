@@ -352,120 +352,150 @@ def plot_grouped_contributions(contribs_by_group):
 
 
 def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
-    """PnL scatter with regime ribbons, BOLD blue axes, 3% ytick freq, percent labels, bold date ticks."""
+    """
+    Plot PnL scatter with regime ribbons.
+    - Y-axis: percent, bold, dark blue, 1.5% step (e.g., -6%, -4.5%, ..., 0%, ..., 4.5%, 6%)
+    - X-axis: quarterly, bold, dark blue, '%b-%Y' (Jan-2021) format
+    - PnL points: purple for negative, light blue for positive
+    - No border/spines, background white
+    """
     import numpy as np
+    import pandas as pd
+    import logging
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
 
     try:
+        # --- Prep regime data ---
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
         regimes = regime_from_smooth_weight(smooth_weight)
 
-        # Pull / align the PnL series
+        # --- Align PnL series ---
         if 'Date' in pnl_df.columns:
             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
         pnl_df.index = pd.to_datetime(pnl_df.index)
         pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
 
-        fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
+        # --- Color by sign, like Matplotlib example ---
+        custom_color_dark = '#002060'
+        custom_color_light = '#3096B9'
+        custom_color_purple = '#800080'
+        colors_full = np.where(pnl_series < 0, custom_color_purple, custom_color_light)
 
-        # Add PnL scatter
+        # --- Plotly scatter ---
+        fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
         fig.add_trace(
             go.Scattergl(
                 x=pnl_series.index,
                 y=pnl_series.values,
                 mode='markers',
-                marker=dict(size=5, color='#163A7B'),  # Make sure it's your "dark blue"
+                marker=dict(size=5, color=colors_full),
                 name='PnL'
             ),
             row=1, col=1
         )
 
+        # --- Add regime ribbons and market events ---
         add_regime_ribbons(fig, fsi, regimes=regimes, row=1, col=1)
         add_event_annotations(fig, market_events, event_heights=event_heights_pnl)
 
-        # Vertical lines for every Jan 1st
+        # --- Vertical lines for each Jan 1st ---
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
         year_starts = [d for d in year_starts if d >= pnl_series.index.min() and d <= pnl_series.index.max()]
         for d in year_starts:
-            fig.add_vline(
-                x=d, line_width=1.2, line_color="black", opacity=0.5, row="all"
-            )
+            fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5, row="all")
 
-        # Annotations (unchanged)
+        # --- Custom annotations (unchanged) ---
         fig.add_annotation(
-            x=pd.to_datetime("2018-08-31"), y=0, xref='x', yref='y',
-            text="PRE-<br>AQUAE", showarrow=False,
-            font=dict(size=16, color='red'), align="center",
+            x=pd.to_datetime("2018-08-31"),
+            y=0,
+            xref='x', yref='y',
+            text="PRE-<br>AQUAE",
+            showarrow=False,
+            font=dict(size=16, color='red'),
+            align="center",
             bgcolor="rgba(255, 255, 255, 0.5)",
-            bordercolor="red", borderwidth=1, borderpad=4,
+            bordercolor="red",
+            borderwidth=1,
+            borderpad=4,
         )
         fig.add_annotation(
-            x=pd.to_datetime("2023-01-01"), y=-0.18, xref='x', yref='paper',
-            text="New Risk<br>Control<br>Implemented", showarrow=False,
-            font=dict(size=12, color='#3096B9'), align="center",
-            bordercolor="red", borderwidth=1, borderpad=4,
+            x=pd.to_datetime("2023-01-01"),
+            y=-0.18,
+            xref='x', yref='paper',
+            text="New Risk<br>Control<br>Implemented",
+            showarrow=False,
+            font=dict(size=12, color='#3096B9'),
+            align="center",
+            bordercolor="red",
+            borderwidth=1,
+            borderpad=4,
             bgcolor="rgba(255, 255, 255, 0.5)"
         )
 
-        # Target VaR lines
-        custom_color_dark = '#3096B9'
-        fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="3%", annotation_position="top right")
-        fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="-3%", annotation_position="bottom right")
+        # --- Target VaR lines ---
+        fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash",
+                      annotation_text="3%", annotation_position="top right")
+        fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash",
+                      annotation_text="-3%", annotation_position="bottom right")
 
-        # ----- Y-Axis BOLD, 3% Spacing -----
+        # --- Y-axis: 1.5% steps, percent, bold, dark blue ---
         y_min = float(np.nanmin(pnl_series))
         y_max = float(np.nanmax(pnl_series))
         max_abs = max(abs(y_min), abs(y_max), 0.06)
-        max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100  # e.g. round up to 0.09 if needed
-        yticks = np.arange(-max_abs, max_abs + 0.001, 0.03)
+        max_abs = np.ceil(max_abs * 100 / 1.5) * 1.5 / 100  # round up to next 1.5%
+        yticks = np.arange(-max_abs, max_abs + 0.001, 0.015)
+        yticktext = [f"{v*100:.1f}%" for v in yticks]
 
-        # Y tick font: Arial Black, large, dark blue (100% bold)
-        yaxis_font = dict(family="Arial Black, Arial", size=16, color="#163A7B")
-
-        # X tick font: Arial Black, large, dark blue (100% bold)
-        xaxis_font = dict(family="Arial Black, Arial", size=16, color="#163A7B")
-
-        # ----- X-Axis adaptive tickformat -----
+        # --- X-axis: Quarterly, bold, dark blue, Jan-2021 format ---
         fig.update_layout(
             height=600,
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
-                title=dict(text="<b>Date</b>", font=dict(family="Arial Black, Arial", size=18, color="#163A7B")),
-                tickfont=xaxis_font,
-                rangeslider=dict(visible=False),
-                type='date',
-                showgrid=True,
-                gridwidth=1.2,
-                gridcolor='black',
-                tickformatstops=[
-                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 366, None], value="%Y")
-                ],
-                ticklabelmode="period"  # keeps tick label centered in interval
+                title=dict(
+                    text="Date",
+                    font=dict(family="Arial Black, Arial", size=15, color=custom_color_dark),
+                ),
+                tickfont=dict(family="Arial Black, Arial", size=13, color=custom_color_dark),
+                tickformat="%b-%Y",  # Jan-2021
+                dtick="M3",          # every 3 months
+                showgrid=False,      # grid lines OFF for Matplotlib style
+                showline=False,
+                zeroline=False,
+                ticks='outside',
+                ticklen=8,
             ),
             yaxis=dict(
-                title=dict(text="<b>PnL (%)</b>", font=dict(family="Arial Black, Arial", size=18, color="#163A7B")),
-                tickfont=yaxis_font,
+                title=dict(
+                    text="PnL (%)",
+                    font=dict(family="Arial Black, Arial", size=15, color=custom_color_dark),
+                ),
+                tickfont=dict(family="Arial Black, Arial", size=13, color=custom_color_dark),
                 tickvals=yticks,
-                tickformat=".0%",
-                showgrid=True,
-                gridwidth=1,
-                gridcolor='lightgray',
+                ticktext=yticktext,
+                showgrid=False,      # grid lines OFF for Matplotlib style
+                showline=False,
+                zeroline=False,
+                ticks='outside',
+                ticklen=8,
                 range=[yticks[0], yticks[-1]]
             ),
-            margin=dict(l=70, r=40, t=50, b=60)
+            margin=dict(l=70, r=40, t=50, b=60),
+            plot_bgcolor='white'
         )
 
+        # --- Fix minus sign, if your function exists ---
         fix_axis_minus(fig, yticks[0], yticks[-1])
+
         return fig
 
     except Exception as e:
-        import logging
         logging.error(f"Error plotting PnL with regime ribbons: {e}", exc_info=True)
         return None
+
 
 
 def save_fsi_charts_to_html(fig1, fig2, fig3=None, filename="fsi_combined_report.html"):
