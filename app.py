@@ -568,6 +568,9 @@ def run_full_pipeline(n_clicks):
     df_aligned = df.loc[fsi_series.index].copy()
     df_aligned["Regime"] = regimes.values
 
+    print("First 10 regimes:", df_aligned["Regime"].head(10).tolist())
+    print("Regime counts:", df_aligned["Regime"].value_counts())
+
     result = {
         "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
         "variable_contribs": variable_contribs.to_json(date_format="iso", orient="split"),
