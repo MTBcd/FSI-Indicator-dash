@@ -289,7 +289,7 @@ def plot_grouped_contributions(contribs_by_group):
                 row="all"
             )
             fig.add_annotation(
-                x=d, y=0.061,
+                x=d, y=0.2,
                 xref='x', yref='paper',
                 text=str(d.year),
                 showarrow=False,
@@ -319,7 +319,7 @@ def plot_grouped_contributions(contribs_by_group):
             ),
             yaxis=dict(
                 title="Contribution to FSI",
-                showgrid=True,
+                showgrid=False,
                 gridwidth=1,
                 gridcolor='lightgray'
             ),
@@ -414,7 +414,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             x=pd.to_datetime("2023-01-01"),
             y=-0.18,
             xref='x', yref='paper',
-            text="New Risk<br>Control<br>Implemented",
+            text="New Risk<br>Controls",
             showarrow=False,
             font=dict(size=12, color='#3096B9'),
             align="center",
@@ -445,9 +445,9 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             xaxis=dict(
                 title=dict(
                     text="<b>Date</b>",
-                    font=dict(family="Arial", size=16, color="#163A7B")
+                    font=dict(family="Arial Bold", size=16, color="#163A7B")
                 ),
-                tickfont=dict(family="Arial", size=12, color="#163A7B"),
+                tickfont=dict(family="Arial Bold", size=12, color="#163A7B"),
                 rangeslider=dict(visible=False),
                 type='date',
                 showgrid=True,
@@ -462,9 +462,9 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             yaxis=dict(
                 title=dict(
                     text="<b>PnL (%)</b>",
-                    font=dict(family="Arial", size=16, color="#163A7B")
+                    font=dict(family="Arial Bold", size=16, color="#163A7B")
                 ),
-                tickfont=dict(family="Arial", size=12, color="#163A7B"),
+                tickfont=dict(family="Arial Bold", size=12, color="#163A7B"),
                 tickvals=yticks,
                 ticktext=yticktext,
                 showgrid=True,
