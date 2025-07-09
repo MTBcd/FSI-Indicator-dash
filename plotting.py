@@ -164,7 +164,7 @@ def plot_group_contributions_with_regime(contribs_by_group):
                 row="all"
             )
             fig.add_annotation(
-                x=d, y=0.61,
+                x=d, y=0.28,
                 xref='x', yref='paper',
                 text=str(d.year),
                 showarrow=False,
@@ -289,7 +289,7 @@ def plot_grouped_contributions(contribs_by_group):
                 row="all"
             )
             fig.add_annotation(
-                x=d, y=0.2,
+                x=d, y=0.28,
                 xref='x', yref='paper',
                 text=str(d.year),
                 showarrow=False,
@@ -367,6 +367,14 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         pnl_df.index = pd.to_datetime(pnl_df.index)
         pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
 
+        # --- Y-axis: 3% spacing, percent, bold, dark blue ---
+        y_min = float(np.nanmin(pnl_series))
+        y_max = float(np.nanmax(pnl_series))
+        max_abs = max(abs(y_min), abs(y_max), 0.06)
+        max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100
+        yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
+        yticktext = [f"{int(v*100)}%" for v in yticks]
+
         fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
         # PnL Scatter
@@ -383,6 +391,11 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
 
         add_regime_ribbons(fig, fsi, regimes=regimes, row=1, col=1)
         # add_event_annotations(fig, market_events, event_heights=event_heights_pnl)
+
+        # Target VaR lines
+        custom_color_dark = '#3096B9'
+        fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
+        fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
 
         # Jan 1st vertical lines
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
@@ -403,17 +416,19 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             xref='x', yref='y',
             text="PRE-<br>AQUAE",
             showarrow=False,
-            font=dict(size=16, color='red'),
+            font=dict(size=14, color='red'),
             align="center",
             bgcolor="rgba(255, 255, 255, 0.5)",
             bordercolor="red",
             borderwidth=1,
             borderpad=4,
         )
+
         fig.add_annotation(
             x=pd.to_datetime("2023-01-01"),
-            y=-0.18,
-            xref='x', yref='paper',
+            y=-0.15,   # or try y=-0.1, adjust if needed
+            xref='x',
+            yref='paper',    # position relative to the chart (0 = bottom, 1 = top)
             text="New Risk<br>Controls",
             showarrow=False,
             font=dict(size=12, color='#3096B9'),
@@ -424,18 +439,69 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             bgcolor="rgba(255, 255, 255, 0.5)"
         )
 
-        # Target VaR lines
-        custom_color_dark = '#3096B9'
-        fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="3%", annotation_position="top right")
-        fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", annotation_text="-3%", annotation_position="bottom right")
+        neptune_end = pnl_series.index.max()
 
-        # --- Y-axis: 3% spacing, percent, bold, dark blue ---
-        y_min = float(np.nanmin(pnl_series))
-        y_max = float(np.nanmax(pnl_series))
-        max_abs = max(abs(y_min), abs(y_max), 0.06)  # At least +/-6%
-        max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100  # Round up to next 3%
-        yticks = np.arange(-max_abs, max_abs + 0.001, 0.03)
-        yticktext = [f"<b>{v*100:.1f}%</b>" for v in yticks]
+        # === Horizontal double-arrow "PORTFOLIO" at y = -0.13 ===
+        fig.add_shape(
+            type="line",
+            x0="2019-01-01", x1="2024-02-01",
+            y0=-0.13, y1=-0.13,
+            line=dict(color="darkblue", width=3),
+            xref='x', yref='y',
+            layer="above"
+        )
+        fig.add_annotation(
+            x="2019-01-01", y=-0.13, xref='x', yref='y',
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+            arrowcolor="darkblue", ax=30, ay=0,
+            opacity=1
+        )
+        fig.add_annotation(
+            x="2024-02-01", y=-0.13, xref='x', yref='y',
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+            arrowcolor="darkblue", ax=-30, ay=0,
+            opacity=1
+        )
+        fig.add_annotation(
+            x="2021-07-01",  # Midpoint
+            y=-0.155,  # Just below the arrow
+            xref='x', yref='y',
+            text="<b>PORTFOLIO</b>",
+            showarrow=False,
+            font=dict(family="Arial Black", size=16, color="darkblue"),
+            align="center"
+        )
+
+        # === Horizontal double-arrow "NEPTUNE" at y = -0.16 ===
+        fig.add_shape(
+            type="line",
+            x0="2024-02-01", x1=neptune_end,
+            y0=-0.13, y1=-0.13,
+            line=dict(color="#3096B9", width=3),
+            xref='x', yref='y',
+            layer="above"
+        )
+        fig.add_annotation(
+            x="2024-02-01", y=-0.13, xref='x', yref='y',
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+            arrowcolor="#3096B9", ax=30, ay=0,
+            opacity=1
+        )
+        fig.add_annotation(
+            x=neptune_end, y=-0.13, xref='x', yref='y',
+            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+            arrowcolor="#3096B9", ax=-30, ay=0,
+            opacity=1
+        )
+        fig.add_annotation(
+            x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2023-01-01")) / 2,
+            y=-0.155,  # Just below the arrow
+            xref='x', yref='y',
+            text="<b>NEPTUNE</b>",
+            showarrow=False,
+            font=dict(family="Arial Black", size=16, color="#3096B9"),
+            align="center"
+        )
 
         # --- X-axis: Bold, dark blue, Jan-2021 style, adaptive zoom ---
         fig.update_layout(
@@ -445,36 +511,40 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             xaxis=dict(
                 title=dict(
                     text="<b>Date</b>",
-                    font=dict(family="Arial Bold", size=16, color="#163A7B")
+                    font=dict(family="Arial Black", size=16, color="#163A7B")
                 ),
-                tickfont=dict(family="Arial Bold", size=12, color="#163A7B"),
+                tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
                 rangeslider=dict(visible=False),
                 type='date',
                 showgrid=True,
                 gridwidth=1.2,
                 gridcolor='black',
                 tickformatstops=[
-                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),  # Jan-2021
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 366, None], value="%Y")
+                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),            # Up to 1 year: show only year
+                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),  # Between 1 month and 1 year: month-year
+                    # (optional) dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),       # For super zoom
                 ]
             ),
             yaxis=dict(
                 title=dict(
                     text="<b>PnL (%)</b>",
-                    font=dict(family="Arial Bold", size=16, color="#163A7B")
-                ),
-                tickfont=dict(family="Arial Bold", size=12, color="#163A7B"),
+                    font=dict(family="Arial Black", size=16, color="#163A7B")),
+                tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
                 tickvals=yticks,
                 ticktext=yticktext,
-                showgrid=True,
+                tickmode="array", 
+                showgrid=False,
                 gridwidth=1,
                 gridcolor='lightgray',
-                range=[yticks[0], yticks[-1]]
+                range=[yticks[0], yticks[-1]],
+                fixedrange=True, 
             )
         )
 
-        fix_axis_minus(fig, yticks[0], yticks[-1])
+
+        # fix_axis_minus(fig, yticks[0], yticks[-1])
+
+        fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
 
         return fig
     except Exception as e:
