@@ -292,3 +292,28 @@ def compute_transition_matrix(series):
     matrix = pd.crosstab(from_states, to_states, normalize='index')
     print("Transition matrix after fix:\n", matrix)
     return matrix
+
+
+
+def average_time_in_regime(regime_series):
+    """
+    Compute average consecutive time spent in each regime.
+    Returns a pandas Series: index=regime, value=average streak length (in days).
+    """
+    import pandas as pd
+    s = pd.Series(regime_series).reset_index(drop=True)
+    result = {}
+    i = 0
+    n = len(s)
+    while i < n:
+        current = s[i]
+        start = i
+        while i + 1 < n and s[i+1] == current:
+            i += 1
+        end = i
+        length = end - start + 1
+        result.setdefault(current, []).append(length)
+        i += 1
+    # Average streak for each regime
+    avg = {k: sum(v)/len(v) for k, v in result.items()}
+    return pd.Series(avg).sort_index()

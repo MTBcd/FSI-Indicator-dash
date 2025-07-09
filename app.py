@@ -276,7 +276,7 @@ from plotting import (
 )
 from utils import (
     aggregate_contributions_by_group,
-    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, classify_risk_regime_hybrid
+    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, classify_risk_regime_hybrid, average_time_in_regime
 )
 
 # --- Consistent Regime Colors ---
@@ -493,7 +493,14 @@ app.layout = html.Div([
             info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
         ]),
         dcc.Graph(id='regime-transition-matrix'),
+
+        html.H4([
+            "Average Time Spent in Each Regime",
+            info_icon("Mean number of consecutive days spent in each regime before switching.")
+        ]),
+        html.Div(id='avg-time-table'),
     ], style={'width': '95%', 'margin': 'auto'}),
+
 
     # --- PnL Distribution Analysis Section ---
     html.Div([
@@ -593,6 +600,7 @@ def run_full_pipeline(n_clicks):
         Output('prob-red-logit', 'figure'),
         Output('prob-red-xgb', 'figure'),
         Output('regime-transition-matrix', 'figure'),
+        Output('avg-time-table', 'children'), 
     ],
     Input('fsi-store', 'data')
 )
@@ -716,7 +724,15 @@ def update_all_from_store(data):
                 plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
             )
 
-    return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix
+    avg_time = average_time_in_regime(regime_series)
+
+    # Format as a nice HTML table for Dash
+    avg_time_table = html.Table([
+        html.Tr([html.Th("Regime"), html.Th("Avg. Consecutive Days")])] +
+        [html.Tr([html.Td(reg), html.Td(f"{days:.1f}")]) for reg, days in avg_time.items()
+    ])
+
+    return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
 @app.callback(
