@@ -498,6 +498,8 @@ def main():
     fsi = variable_contribs['FSI']
     regimes = classify_risk_regime_hybrid(fsi)
 
+    print("Regime classification value counts:\n", regimes.value_counts())
+
     logging.info("Plotting results...")
     fig1 = plot_group_contributions_with_regime(variable_contribs)
     fig2 = plot_grouped_contributions(grouped_contribs)

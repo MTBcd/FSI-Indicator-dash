@@ -100,6 +100,9 @@ def fix_axis_minus(fig, y_min, y_max, n_ticks=5):
     tick_texts = [f"{v:.2f}".replace("-", "-") for v in tick_vals]  # Ensure using standard hyphen
     fig.update_yaxes(tickvals=tick_vals, ticktext=tick_texts, tickfont=dict(family="Arial", size=12))
 
+def make_tz_naive(dt):
+    return dt.tz_localize(None) if getattr(dt, "tzinfo", None) is not None else dt
+
 
 def plot_group_contributions_with_regime(contribs_by_group):
     """Plot group-level contributions to the FSI with regime highlighting."""
@@ -152,8 +155,13 @@ def plot_group_contributions_with_regime(contribs_by_group):
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
         # Vertical lines and year labels for every Jan 1st
+        index_min = make_tz_naive(contribs_by_group.index.min())
+        index_max = make_tz_naive(contribs_by_group.index.max())
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(contribs_by_group.index.year))])
-        year_starts = [d for d in year_starts if d >= contribs_by_group.index.min() and d <= contribs_by_group.index.max()]
+        year_starts = [make_tz_naive(d) for d in year_starts]
+        year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
+
+
 
         for d in year_starts:
             fig.add_vline(
@@ -277,8 +285,13 @@ def plot_grouped_contributions(contribs_by_group):
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
         # Vertical lines for every Jan 1st (no event lines)
+        index_min = make_tz_naive(contribs_by_group.index.min())
+        index_max = make_tz_naive(contribs_by_group.index.max())
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(contribs_by_group.index.year))])
-        year_starts = [d for d in year_starts if d >= contribs_by_group.index.min() and d <= contribs_by_group.index.max()]
+        year_starts = [make_tz_naive(d) for d in year_starts]
+        year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
+
+
 
         for d in year_starts:
             fig.add_vline(
@@ -398,8 +411,13 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
 
         # Jan 1st vertical lines
+        index_min = make_tz_naive(pnl_series.index.min())
+        index_max = make_tz_naive(pnl_series.index.max())
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
-        year_starts = [d for d in year_starts if d >= pnl_series.index.min() and d <= pnl_series.index.max()]
+        year_starts = [make_tz_naive(d) for d in year_starts]
+        year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
+
+
         for d in year_starts:
             fig.add_vline(
                 x=d,
@@ -494,7 +512,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             opacity=1
         )
         fig.add_annotation(
-            x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2023-01-01")) / 2,
+            x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
             y=-0.155,  # Just below the arrow
             xref='x', yref='y',
             text="<b>NEPTUNE</b>",

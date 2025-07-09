@@ -280,12 +280,15 @@ def predict_regime_probability(df, model_type='xgboost', lookahead=20, columns=N
 
     return most_recent_proba, proba_full, feature_importance
 
+
 def compute_transition_matrix(series):
     """
     Compute the normalized historical transition matrix (from regime/state series).
     Returns a pandas DataFrame (rows: FROM, cols: TO, values: probability).
     """
-    from_states = series[:-1]
-    to_states = series[1:]
+    series = pd.Series(series).astype(str).reset_index(drop=True)
+    from_states = series[:-1].values
+    to_states = series[1:].values
     matrix = pd.crosstab(from_states, to_states, normalize='index')
+    print("Transition matrix after fix:\n", matrix)
     return matrix
