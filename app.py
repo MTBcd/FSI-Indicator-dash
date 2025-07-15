@@ -345,6 +345,23 @@ app.layout = html.Div([
                         "Variable-Level FSI",
                         info_icon("Shows each variable’s weighted contribution to the overall Financial Stress Index.")
                     ]),
+                    html.Label("Select FSI date range:"),
+                    dcc.DatePickerRange(
+                        id='fsi-date-range',
+                        min_date_allowed=None,  # Set after data load
+                        max_date_allowed=None,
+                        start_date=None,
+                        end_date=None,
+                        display_format="YYYY-MM-DD",
+                        style={"marginBottom": "12px"}
+                        ),
+                    html.Label("Show Y-Axis Ticks:"),
+                    dcc.Checklist(
+                        id='fsi-yaxis-ticks',
+                        options=[{'label': 'Show Y-Ticks', 'value': 'show'}],
+                        value=['show'],
+                        style={'marginBottom': '12px'}
+                    ),
                     dcc.Graph(id='fig1'),
                     html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
                 ], style={"margin-bottom": "10px"}),
@@ -602,9 +619,14 @@ def run_full_pipeline(n_clicks):
         Output('regime-transition-matrix', 'figure'),
         Output('avg-time-table', 'children'), 
     ],
-    Input('fsi-store', 'data')
+    [
+        Input('fsi-store', 'data'),
+        Input('fsi-date-range', 'start_date'),
+        Input('fsi-date-range', 'end_date'),
+        Input('fsi-yaxis-ticks', 'value')
+    ]
 )
-def update_all_from_store(data):
+def update_all_from_store(data, start_date, end_date, ytick_opts):
     if data is None:
         raise dash.exceptions.PreventUpdate
 
@@ -612,8 +634,24 @@ def update_all_from_store(data):
     grouped_contribs = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
     df = pd.read_json(io.StringIO(data["df"]), orient="split")
 
+    # --- FILTER by selected date ---
+    if start_date:
+        variable_contribs = variable_contribs[variable_contribs.index >= pd.to_datetime(start_date)]
+        grouped_contribs = grouped_contribs[grouped_contribs.index >= pd.to_datetime(start_date)]
+        df = df[df.index >= pd.to_datetime(start_date)]
+    if end_date:
+        variable_contribs = variable_contribs[variable_contribs.index <= pd.to_datetime(end_date)]
+        grouped_contribs = grouped_contribs[grouped_contribs.index <= pd.to_datetime(end_date)]
+        df = df[df.index <= pd.to_datetime(end_date)]
+
     fig1 = plot_group_contributions_with_regime(variable_contribs)
     fig2 = plot_grouped_contributions(grouped_contribs)
+
+    # --- Y-Axis Tick Visibility ---
+    show_ticks = 'show' in (ytick_opts or [])
+    fig1.update_yaxes(showticklabels=show_ticks)
+    fig2.update_yaxes(showticklabels=show_ticks)
+
     curr_regime = get_current_regime(df)
     curr_regime_html = regime_color_text(curr_regime)
 
@@ -624,20 +662,18 @@ def update_all_from_store(data):
     )
 
     def hmm_state_to_regime(state):
-        # Choose the mapping that fits your application. This is a common mapping by state number.
         mapping = {0: "Green", 1: "Yellow", 2: "Amber", 3: "Red"}
         return mapping.get(state, f"Unknown ({state})")
 
     hmm_regime = hmm_state_to_regime(hmm_state)
     hmm_regime_html = regime_color_text(hmm_regime)
 
-    # --- Improved: Gauge titles, font, margin ---
     def make_prob_gauge(prob, label):
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=prob * 100,
             domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': label, "font": {"size": 13}},  # Smaller title
+            title={'text': label, "font": {"size": 13}},
             gauge={
                 'axis': {'range': [0, 100]},
                 'bar': {'color': "#e74c3c" if prob > 0.6 else "#f1c40f" if prob > 0.3 else "#27ae60"},
@@ -650,9 +686,9 @@ def update_all_from_store(data):
             number={'suffix': "%"}
         ))
         fig.update_layout(
-            margin=dict(l=10, r=10, t=38, b=14),  # More space at the top
+            margin=dict(l=10, r=10, t=38, b=14),
             paper_bgcolor="#f7f8fa",
-            height=170  # Explicit height
+            height=170
         )
         return fig
 
@@ -661,18 +697,11 @@ def update_all_from_store(data):
     fig_prob_logit = make_prob_gauge(prob_logit, "Logit P(Red)")
     fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red)")
 
-    # --- Improved: Transition Matrix ---
     regime_series = df['Regime'].astype(str).fillna("NA").reset_index(drop=True)
 
-    print("Regime counts:", regime_series.value_counts())
-    print("Transitions detected:", (regime_series != regime_series.shift(1)).sum())
-    print("First 20 regime values:", regime_series[:20].tolist())
-
-    # Remove NAs and constant stretches
     valid_idx = regime_series != "NA"
     regime_series = regime_series[valid_idx]
     if regime_series.nunique() < 2:
-        # Only one regime present
         fig_matrix = go.Figure()
         fig_matrix.update_layout(
             title="Only one regime found in data (no regime changes).",
@@ -680,19 +709,12 @@ def update_all_from_store(data):
             xaxis_visible=False, yaxis_visible=False
         )
     else:
-        # Compute transitions, check for actual off-diagonal transitions
         matrix = compute_transition_matrix(regime_series)
         regimes = list(REGIME_COLORS.keys())
         matrix = matrix.reindex(index=regimes, columns=regimes, fill_value=0)
         off_diag = matrix.values.copy()
         np.fill_diagonal(off_diag, 0)
         off_diag_sum = off_diag.sum()
-
-        # DEBUG PRINT for you in deployment logs
-        print("Transition matrix:\n", matrix)
-        print("Off-diagonal sum:", off_diag_sum)
-        print("Regime counts:", regime_series.value_counts())
-
         if off_diag_sum < 1e-8:
             fig_matrix = go.Figure()
             fig_matrix.update_layout(
@@ -725,14 +747,13 @@ def update_all_from_store(data):
             )
 
     avg_time = average_time_in_regime(regime_series)
-
-    # Format as a nice HTML table for Dash
     avg_time_table = html.Table([
         html.Tr([html.Th("Regime"), html.Th("Avg. Consecutive Days")])] +
         [html.Tr([html.Td(reg), html.Td(f"{days:.1f}")]) for reg, days in avg_time.items()
     ])
 
     return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table
+
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
 @app.callback(
@@ -817,6 +838,22 @@ def set_datepicker_limits(upload_contents, upload_filename):
     max_date = pnl_df['Date'].max().date()
     return min_date, max_date, min_date, max_date
 
+@app.callback(
+    [
+        Output('fsi-date-range', 'min_date_allowed'),
+        Output('fsi-date-range', 'max_date_allowed'),
+        Output('fsi-date-range', 'start_date'),
+        Output('fsi-date-range', 'end_date'),
+    ],
+    Input('fsi-store', 'data')
+)
+def set_fsi_date_limits(data):
+    if data is None:
+        return None, None, None, None
+    grouped_contribs = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
+    min_date = grouped_contribs.index.min().date()
+    max_date = grouped_contribs.index.max().date()
+    return min_date, max_date, min_date, max_date
 
 # --- 4. Download as Image (all charts) ---
 @app.callback(
