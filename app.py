@@ -747,10 +747,46 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
             )
 
     avg_time = average_time_in_regime(regime_series)
-    avg_time_table = html.Table([
-        html.Tr([html.Th("Regime"), html.Th("Avg. Consecutive Days")])] +
-        [html.Tr([html.Td(reg), html.Td(f"{days:.1f}")]) for reg, days in avg_time.items()
-    ])
+    avg_time_table = html.Div([
+        html.Div([
+            html.Span("Average Time Spent in Each Regime", style={
+                "fontWeight": "bold", "fontSize": "1.17em", "marginRight": "7px"
+            }),
+            info_icon("Mean number of consecutive days spent in each regime before switching.")
+        ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
+        html.Table([
+            html.Thead(
+                html.Tr([
+                    html.Th(reg, style={
+                        "padding": "8px 18px",
+                        "background": "#f2f3f5",
+                        "color": REGIME_COLORS[reg],
+                        "fontWeight": "bold",
+                        "fontSize": "1.09em",
+                        "borderRadius": "7px 7px 0 0"
+                    }) for reg in ["Green", "Yellow", "Amber", "Red"]
+                ])
+            ),
+            html.Tbody([
+                html.Tr([
+                    html.Td(f"{avg_time.get(reg, 0):.1f}", style={
+                        "padding": "8px 18px",
+                        "fontWeight": "500",
+                        "fontSize": "1.09em"
+                    }) for reg in ["Green", "Yellow", "Amber", "Red"]
+                ])
+            ])
+        ], style={
+            "borderCollapse": "separate",
+            "borderSpacing": "0",
+            "marginTop": "3px",
+            "background": "#fff",
+            "borderRadius": "8px",
+            "boxShadow": "0 2px 8px 0 rgba(0,0,0,0.05)",
+            "width": "auto",
+            "minWidth": "350px"
+        })
+    ], style={"marginTop": "15px", "marginBottom": "20px"})
 
     return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table
 
