@@ -370,6 +370,19 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
 
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
+        fsi_series.index = pd.to_datetime(fsi_series.index)
+        
+        # --- Filtering here ---
+        start_chart_date = pd.to_datetime("2019-01-01")
+        if 'Date' in pnl_df.columns:
+            pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
+        pnl_df.index = pd.to_datetime(pnl_df.index)
+        
+        # Filter ALL data to start from 2019-01-01
+        pnl_df = pnl_df.loc[pnl_df.index >= start_chart_date]
+        contribs_by_group = contribs_by_group.loc[contribs_by_group.index >= start_chart_date]
+        fsi_series = fsi_series.loc[fsi_series.index >= start_chart_date]
+
         fsi = contribs_by_group['FSI']
         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
         regimes = regime_from_smooth_weight(smooth_weight)
