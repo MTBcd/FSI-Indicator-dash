@@ -460,7 +460,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
             y=-0.15,   # or try y=-0.1, adjust if needed
             xref='x',
             yref='paper',    # position relative to the chart (0 = bottom, 1 = top)
-            text="New Risk<br>Controls</b>",
+            text="<b>New Risk<br>Controls</b>",
             showarrow=False,
             font=dict(size=12, color="darkblue"),
             align="center",
