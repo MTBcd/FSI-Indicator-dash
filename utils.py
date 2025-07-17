@@ -354,7 +354,6 @@ def compute_transition_matrix(series):
     return matrix
 
 
-
 def average_time_in_regime(regime_series):
     """
     Compute average consecutive time spent in each regime.
