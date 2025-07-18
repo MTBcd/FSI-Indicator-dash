@@ -626,6 +626,8 @@ def run_full_pipeline(n_clicks):
         Input('fsi-yaxis-ticks', 'value')
     ]
 )
+
+
 def update_all_from_store(data, start_date, end_date, ytick_opts):
     if data is None:
         raise dash.exceptions.PreventUpdate
@@ -692,10 +694,15 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
         )
         return fig
 
-    prob_logit, _, _ = predict_regime_probability(df, model_type='logit', lookahead=20)
-    prob_xgb, _, _ = predict_regime_probability(df, model_type='xgboost', lookahead=20)
-    fig_prob_logit = make_prob_gauge(prob_logit, "Logit P(Red)")
-    fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red)")
+    # prob_logit, _, _ = predict_regime_probability(df, model_type='logit', lookahead=20)
+    # prob_xgb, _, _ = predict_regime_probability(df, model_type='xgboost', lookahead=20)
+    # fig_prob_logit = make_prob_gauge(prob_logit, "Logit P(Red)")
+    # fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red)")
+
+    prob_logit, _, _, _, score_logit = predict_regime_probability(df, model_type='logit', lookahead=20)
+    prob_xgb, _, _, _, score_xgb = predict_regime_probability(df, model_type='xgboost', lookahead=20)
+    fig_prob_logit = make_prob_gauge(prob_logit, f"Logit P(Red) (AUC: {score_logit:.2f})")
+    fig_prob_xgb = make_prob_gauge(prob_xgb, f"XGBoost P(Red) (AUC: {score_xgb:.2f})")
 
     regime_series = df['Regime'].astype(str).fillna("NA").reset_index(drop=True)
 
@@ -739,7 +746,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
                 colorbar=dict(title="Prob.")
             ))
             fig_matrix.update_layout(
-                title="Regime Transition Matrix<br>(Rows: FROM, Cols: TO)",
+                title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b>",
                 xaxis_title="To Regime",
                 yaxis_title="From Regime",
                 margin=dict(l=40, r=20, t=40, b=40),
@@ -749,7 +756,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
     avg_time = average_time_in_regime(regime_series)
     avg_time_table = html.Div([
         html.Div([
-            html.Span("Average Time Spent in Each Regime", style={
+            html.Span("The average time spent in regime is measured in number of days.", style={
                 "fontWeight": "bold", "fontSize": "1.17em", "marginRight": "7px"
             }),
             info_icon("Mean number of consecutive days spent in each regime before switching.")

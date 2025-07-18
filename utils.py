@@ -12,6 +12,8 @@ from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
+from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
+from sklearn.metrics import roc_auc_score
 
 def normalize_loadings(weights):
     """Normalize the loadings vector."""
@@ -293,12 +295,72 @@ def run_hmm(df, n_states=4, columns=None):
     most_recent_state = int(hidden_states[-1])
     return most_recent_state, df_result, state_probs
 
-def predict_regime_probability(df, model_type='xgboost', lookahead=20, columns=None):
+# def predict_regime_probability(df, model_type='xgboost', lookahead=20, columns=None):
+#     """
+#     Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression.
+#     Returns most recent probability, full predicted probability series, and variable importance.
+#     """
+#     # Prepare target
+#     if 'Regime' not in df.columns:
+#         raise ValueError("'Regime' column required for regime prediction.")
+
+#     df = df.copy()
+#     df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
+#     df_logit = df.dropna()
+
+#     # Feature columns
+#     exclude = ['Future_Red', 'Regime', 'HMM_State']
+#     if columns is None:
+#         columns = [c for c in df_logit.columns if c not in exclude]
+#     X = df_logit[columns]
+#     y = df_logit['Future_Red']
+
+#     # Split (no shuffle: time series)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.3)
+
+#     if model_type == 'xgboost':
+#         model = XGBClassifier(n_estimators=200, eval_metric='logloss', use_label_encoder=False, random_state=42)
+#         model.fit(X_train, y_train)
+#         y_proba = model.predict_proba(X_test)[:, 1]
+#         importance = model.feature_importances_
+#     else:
+#         model = LogisticRegression(max_iter=1000)
+#         model.fit(X_train, y_train)
+#         y_proba = model.predict_proba(X_test)[:, 1]
+#         importance = np.abs(model.coef_[0])
+
+#     # Full probability array (align to df)
+#     proba_full = np.full(len(df_logit), np.nan)
+#     proba_full[-len(y_proba):] = y_proba
+
+#     # Most recent predicted probability
+#     most_recent_proba = y_proba[-1]
+#     feature_importance = dict(zip(X_train.columns, importance))
+
+#     # Optional: print classification report (can be commented out)
+#     # print(classification_report(y_test, model.predict(X_test)))
+
+#     return most_recent_proba, proba_full, feature_importance
+
+
+
+def predict_regime_probability(
+    df, 
+    model_type='xgboost', 
+    lookahead=20, 
+    columns=None,
+    xgb_grid=None,
+    logit_grid=None,
+    n_splits=5,
+    scoring='roc_auc'
+):
     """
-    Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression.
-    Returns most recent probability, full predicted probability series, and variable importance.
+    Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression,
+    with TimeSeriesSplit and hyperparameter optimization.
+    Returns most recent probability, full predicted probability series, variable importance,
+    best estimator, and cross-validated metric.
     """
-    # Prepare target
+
     if 'Regime' not in df.columns:
         raise ValueError("'Regime' column required for regime prediction.")
 
@@ -306,39 +368,82 @@ def predict_regime_probability(df, model_type='xgboost', lookahead=20, columns=N
     df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
     df_logit = df.dropna()
 
-    # Feature columns
+    # Features
     exclude = ['Future_Red', 'Regime', 'HMM_State']
     if columns is None:
         columns = [c for c in df_logit.columns if c not in exclude]
     X = df_logit[columns]
     y = df_logit['Future_Red']
 
-    # Split (no shuffle: time series)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.3)
+    # Optional: scale features (uncomment if needed, especially for LogisticRegression)
+    # scaler = StandardScaler()
+    # X = scaler.fit_transform(X)
 
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    # Hyperparameter grids
     if model_type == 'xgboost':
-        model = XGBClassifier(n_estimators=200, eval_metric='logloss', use_label_encoder=False, random_state=42)
-        model.fit(X_train, y_train)
-        y_proba = model.predict_proba(X_test)[:, 1]
-        importance = model.feature_importances_
+        from xgboost import XGBClassifier
+        if xgb_grid is None:
+            xgb_grid = {
+                'n_estimators': [100, 200],
+                'max_depth': [3, 5],
+                'learning_rate': [0.01, 0.1],
+                'subsample': [0.7, 1.0],
+            }
+        model = XGBClassifier(eval_metric='logloss', use_label_encoder=False, random_state=42)
+        search = GridSearchCV(
+            estimator=model,
+            param_grid=xgb_grid,
+            cv=tscv,
+            scoring=scoring,
+            n_jobs=-1,
+            verbose=0
+        )
     else:
-        model = LogisticRegression(max_iter=1000)
-        model.fit(X_train, y_train)
-        y_proba = model.predict_proba(X_test)[:, 1]
-        importance = np.abs(model.coef_[0])
+        from sklearn.linear_model import LogisticRegression
+        if logit_grid is None:
+            logit_grid = {
+                'C': [0.01, 0.1, 1, 10],
+                'penalty': ['l2'],
+                'solver': ['lbfgs', 'liblinear'],
+                'max_iter': [500, 1000]
+            }
+        model = LogisticRegression()
+        search = GridSearchCV(
+            estimator=model,
+            param_grid=logit_grid,
+            cv=tscv,
+            scoring=scoring,
+            n_jobs=-1,
+            verbose=0
+        )
 
-    # Full probability array (align to df)
+    search.fit(X, y)
+    best_model = search.best_estimator_
+    best_score = search.best_score_
+
+    # Predict proba for entire data (align with df_logit)
+    y_proba = best_model.predict_proba(X)[:, 1]
     proba_full = np.full(len(df_logit), np.nan)
     proba_full[-len(y_proba):] = y_proba
 
-    # Most recent predicted probability
+    # Most recent probability
     most_recent_proba = y_proba[-1]
-    feature_importance = dict(zip(X_train.columns, importance))
 
-    # Optional: print classification report (can be commented out)
-    # print(classification_report(y_test, model.predict(X_test)))
+    # Variable importance
+    if model_type == 'xgboost':
+        importance = best_model.feature_importances_
+    else:
+        importance = np.abs(best_model.coef_[0])
+    feature_importance = dict(zip(X.columns, importance))
 
-    return most_recent_proba, proba_full, feature_importance
+    # Optionally print the best parameters and cross-validated score
+    # print("Best Params:", search.best_params_)
+    # print("Best Cross-Validated Score:", best_score)
+
+    return most_recent_proba, proba_full, feature_importance, best_model, best_score
+
 
 
 def compute_transition_matrix(series):
