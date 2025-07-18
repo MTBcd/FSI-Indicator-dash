@@ -675,7 +675,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
             mode="gauge+number",
             value=prob * 100,
             domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': label, "font": {"size": 13}},
+            title={'text': label, "font": {"size": 13}, "align": "center"},
             gauge={
                 'axis': {'range': [0, 100]},
                 'bar': {'color': "#e74c3c" if prob > 0.6 else "#f1c40f" if prob > 0.3 else "#27ae60"},
@@ -688,9 +688,9 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
             number={'suffix': "%"}
         ))
         fig.update_layout(
-            margin=dict(l=10, r=10, t=38, b=14),
+            margin=dict(l=10, r=10, t=45, b=14),
             paper_bgcolor="#f7f8fa",
-            height=170
+            height=210
         )
         return fig
 
@@ -749,7 +749,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
                 title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b>",
                 xaxis_title="To Regime",
                 yaxis_title="From Regime",
-                margin=dict(l=40, r=20, t=40, b=40),
+                margin=dict(l=30, r=30, t=45, b=40),
                 plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
             )
 
