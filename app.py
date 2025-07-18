@@ -474,7 +474,7 @@ app.layout = html.Div([
                 html.Div([
                     html.H4([
                         "Probability of Red Regime",
-                        info_icon("Predicted probability of entering a high-risk (“Red”) regime in the next lookahead window, based on current market features.<br>Logit P(Red): Interpretable linear probability model.<br>XGBoost P(Red): Nonlinear, machine-learning-based probability model.")
+                        info_icon("Predicted probability of entering a high-risk (Red) regime in the next lookahead window, based on current market features.<br>Logit P(Red): Interpretable linear probability model.<br>XGBoost P(Red): Nonlinear, machine-learning-based probability model.")
                     ], style={"margin-bottom": "18px", "text-align": "center"})
                 ]),
                 html.Div([
@@ -509,8 +509,11 @@ app.layout = html.Div([
             "Historical Regime Transition Matrix",
             info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
         ]),
-        dcc.Graph(id='regime-transition-matrix'),
-
+        # dcc.Graph(id='regime-transition-matrix'),
+        html.Div(
+            dcc.Graph(id='regime-transition-matrix'),
+            style={"textAlign": "center", "maxWidth": "440px", "margin": "0 auto"}
+        ),
         html.H4([
             "Average Time Spent in Each Regime",
             info_icon("Mean number of consecutive days spent in each regime before switching.")
@@ -749,7 +752,8 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
                 title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b>",
                 xaxis_title="To Regime",
                 yaxis_title="From Regime",
-                margin=dict(l=30, r=30, t=45, b=40),
+                margin=dict(l=20, r=20, t=45, b=40),
+                font=dict(size=13),
                 plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
             )
 
