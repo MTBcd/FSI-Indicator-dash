@@ -330,37 +330,37 @@ def merge_data(config, max_age_hours=12):
         df = df[df.index >= cutoff_date]
         logging.info(f"Shape after aligning to cutoff date: {df.shape}")
 
-        # # --- 3. Forward/backward fill, drop columns with too much missing ---
-        # df = df.ffill().bfill()
-        # cols_before_drop = set(df.columns)
-        # df = df.dropna(axis=1, thresh=int(0.9 * len(df)))
-        # cols_after_drop = set(df.columns)
-        # dropped_cols = cols_before_drop - cols_after_drop
-        # logging.info(f"Dropped {dropped_cols} columns with >10% NaN. Shape now: {df.shape}")
-
-        # # --- 4. Final drop of any remaining NaN rows ---
-        # df = df.dropna()
-        # logging.info(f"Shape after dropping remaining NaN rows: {df.shape}")
-
-
-        # --- 3. Hybrid imputation for missing values ---
-        for col in df.columns:
-            missing_ratio = df[col].isnull().mean()
-            if missing_ratio < 0.05:
-                df[col] = df[col].ffill().bfill()
-            elif missing_ratio < 0.15:
-                df[col] = kalman_impute(df[col])
-            elif missing_ratio < 0.3:
-                df[col] = impute_data(df[[col]])[col]
-            else:
-                df.drop(col, axis=1, inplace=True)
-                logging.warning(f"Dropped column {col} due to excessive missing values ({missing_ratio:.1%}).")
-        logging.info(f"Shape after hybrid imputation: {df.shape}")
-
-        # Defensive: Drop any still-missing columns (should be none, but for safety)
+        # --- 3. Forward/backward fill, drop columns with too much missing ---
+        df = df.ffill().bfill()
+        cols_before_drop = set(df.columns)
         df = df.dropna(axis=1, thresh=int(0.9 * len(df)))
-        df = df.dropna()  # Drop any remaining NaN rows (should be rare)
-        logging.info(f"Shape after dropping remaining NaN: {df.shape}")
+        cols_after_drop = set(df.columns)
+        dropped_cols = cols_before_drop - cols_after_drop
+        logging.info(f"Dropped {dropped_cols} columns with >10% NaN. Shape now: {df.shape}")
+
+        # --- 4. Final drop of any remaining NaN rows ---
+        df = df.dropna()
+        logging.info(f"Shape after dropping remaining NaN rows: {df.shape}")
+
+
+        # # --- 3. Hybrid imputation for missing values ---
+        # for col in df.columns:
+        #     missing_ratio = df[col].isnull().mean()
+        #     if missing_ratio < 0.05:
+        #         df[col] = df[col].ffill().bfill()
+        #     elif missing_ratio < 0.15:
+        #         df[col] = kalman_impute(df[col])
+        #     elif missing_ratio < 0.3:
+        #         df[col] = impute_data(df[[col]])[col]
+        #     else:
+        #         df.drop(col, axis=1, inplace=True)
+        #         logging.warning(f"Dropped column {col} due to excessive missing values ({missing_ratio:.1%}).")
+        # logging.info(f"Shape after hybrid imputation: {df.shape}")
+
+        # # Defensive: Drop any still-missing columns (should be none, but for safety)
+        # df = df.dropna(axis=1, thresh=int(0.9 * len(df)))
+        # df = df.dropna()  # Drop any remaining NaN rows (should be rare)
+        # logging.info(f"Shape after dropping remaining NaN: {df.shape}")
 
 
         # --- 5. Defensive check for empty or too-narrow dataframe ---
