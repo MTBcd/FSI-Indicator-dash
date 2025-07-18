@@ -437,8 +437,8 @@ app.layout = html.Div([
             html.Div([   # LEFT COLUMN
                 html.Div([
                     html.H4([
-                        "Current Regime (Rule-Based):",
-                        info_icon("Classified by FSI and thresholds.")
+                        "Current Regime (FSI Regime):",
+                        info_icon("Classified by FSI volatility and thresholds.")
                     ]),
                     html.Div(
                         id='current-regime',
@@ -451,8 +451,8 @@ app.layout = html.Div([
                 ], className="card-metric", style={"margin-bottom": "28px"}),
                 html.Div([
                     html.H4([
-                        "Current HMM Market Regime:",
-                        info_icon("Market regime inferred by a Hidden Markov Model.")
+                        "Current Benchmark Regime (HMM Regime):",
+                        info_icon("Market regime inferred by a Hidden Markov Model. <br>This reflects the most likely underlying market state, based on a statistical regime-switching model fitted to market data.")
                     ]),
                     html.Div(
                         id='current-hmm',
@@ -474,7 +474,7 @@ app.layout = html.Div([
                 html.Div([
                     html.H4([
                         "Probability of Red Regime",
-                        info_icon("Predicted probability of entering a high-risk (Red) regime in the next lookahead window, based on current market features.")
+                        info_icon("Predicted probability of entering a high-risk (“Red”) regime in the next lookahead window, based on current market features.<br>Logit P(Red): Interpretable linear probability model.<br>XGBoost P(Red): Nonlinear, machine-learning-based probability model.")
                     ], style={"margin-bottom": "18px", "text-align": "center"})
                 ]),
                 html.Div([
