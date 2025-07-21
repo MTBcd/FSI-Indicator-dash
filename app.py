@@ -752,8 +752,8 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
                 title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b><br>",
                 xaxis_title="To Regime",
                 yaxis_title="From Regime",
-                margin=dict(l=25, r=25, t=45, b=40),
-                font=dict(size=14),
+                margin=dict(l=35, r=35, t=45, b=40),
+                font=dict(size=11),
                 plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
             )
 
