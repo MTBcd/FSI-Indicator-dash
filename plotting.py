@@ -111,6 +111,7 @@ def plot_group_contributions_with_regime(contribs_by_group, regime_method="discr
         fsi = contribs_by_group['FSI']
         if regime_method == 'discrete':
             regimes = classify_risk_regime_hybrid(fsi)
+            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
         else:
             smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
             regimes = regime_from_smooth_weight(smooth_weight)
@@ -244,6 +245,7 @@ def plot_grouped_contributions(contribs_by_group, regime_method='discrete'): #sm
         fsi = contribs_by_group['FSI']
         if regime_method == 'discrete':
             regimes = classify_risk_regime_hybrid(fsi)
+            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
         else:
             smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
             regimes = regime_from_smooth_weight(smooth_weight)
