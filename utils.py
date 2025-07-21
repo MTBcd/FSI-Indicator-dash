@@ -12,7 +12,7 @@ from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
-from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
+from sklearn.model_selection import TimeSeriesSplit, GridSearchCV, StratifiedKFold
 from sklearn.metrics import roc_auc_score
 import warnings
 
@@ -383,7 +383,7 @@ def predict_regime_probability(
     scaler = StandardScaler()
     X = scaler.fit_transform(X)
 
-    tscv = TimeSeriesSplit(n_splits=n_splits)
+    tscv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     # Hyperparameter grids
     if model_type == 'xgboost':
@@ -395,7 +395,7 @@ def predict_regime_probability(
                 'learning_rate': [0.01, 0.1],
                 'subsample': [0.7, 1.0],
             }
-        model = XGBClassifier(eval_metric='logloss', use_label_encoder=False, random_state=42)
+        model = XGBClassifier(eval_metric='logloss', random_state=42)
         search = GridSearchCV(
             estimator=model,
             param_grid=xgb_grid,

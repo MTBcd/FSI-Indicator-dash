@@ -82,12 +82,14 @@ def estimate_fsi_recursive_rolling_with_stability(
     df, window_size=125, n_iter=150, stability_threshold=0.7
 ):
     df = df.dropna()
-    arr = df.values
+    arr = np.ascontiguousarray(df.values)
     dates = df.index[window_size-1:]
     columns = df.columns
 
     # Batched rolling windows
     roll = rolling_window(arr, window_size)  # (num_windows, window_size, N)
+    roll = np.ascontiguousarray(roll)
+    
     omega_history, fsi_series = parallel_fsi_windows(roll, arr, n_iter)
 
     # Cosine similarity (serial, negligible cost)
