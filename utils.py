@@ -407,7 +407,7 @@ def predict_regime_probability(
                 'C': [0.01, 0.1, 1, 10],
                 'penalty': ['l2'],
                 'solver': ['lbfgs', 'liblinear'],
-                'max_iter': [500, 1000]
+                'max_iter': [700, 1200]
             }
         model = LogisticRegression()
         search = GridSearchCV(
