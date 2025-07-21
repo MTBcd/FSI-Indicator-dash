@@ -6,7 +6,7 @@ import numpy as np
 import chart_studio
 import chart_studio.plotly as py
 import logging
-from utils import smooth_transition_regime, regime_from_smooth_weight, classify_risk_regime_hybrid
+from utils import smooth_transition_regime, regime_from_smooth_weight
 import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde, skew, kurtosis
@@ -104,17 +104,13 @@ def make_tz_naive(dt):
     return dt.tz_localize(None) if getattr(dt, "tzinfo", None) is not None else dt
 
 
-def plot_group_contributions_with_regime(contribs_by_group, regime_method="discrete"): #smooth
+def plot_group_contributions_with_regime(contribs_by_group):
     """Plot group-level contributions to the FSI with regime highlighting."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        if regime_method == 'discrete':
-            regimes = classify_risk_regime_hybrid(fsi)
-            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        else:
-            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-            regimes = regime_from_smooth_weight(smooth_weight)
+        smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
+        regimes = regime_from_smooth_weight(smooth_weight)
 
         fig = make_subplots(
             rows=2, cols=1,
@@ -238,17 +234,13 @@ def plot_group_contributions_with_regime(contribs_by_group, regime_method="discr
         logging.error(f"Error plotting group contributions: {e}", exc_info=True)
         return None
 
-def plot_grouped_contributions(contribs_by_group, regime_method='discrete'): #smooth
+def plot_grouped_contributions(contribs_by_group):
     """Plot grouped contributions to the FSI."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        if regime_method == 'discrete':
-            regimes = classify_risk_regime_hybrid(fsi)
-            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        else:
-            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-            regimes = regime_from_smooth_weight(smooth_weight)
+        smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
+        regimes = regime_from_smooth_weight(smooth_weight)
 
         fig = make_subplots(
             rows=2, cols=1,
@@ -372,7 +364,7 @@ def plot_grouped_contributions(contribs_by_group, regime_method='discrete'): #sm
         return None
 
 
-def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regime_method='discrete'): #smooth
+def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
     """Plot PnL scatter with *identical* regime background as FSI group chart, with bold blue axes, percent Y-ticks."""
     import numpy as np
 
@@ -392,11 +384,8 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regime_m
         fsi_series = fsi_series.loc[fsi_series.index >= start_chart_date]
 
         fsi = contribs_by_group['FSI']
-        if regime_method == 'discrete':                                 # change smooth
-            regimes = classify_risk_regime_hybrid(fsi)
-        else:
-            smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-            regimes = regime_from_smooth_weight(smooth_weight)
+        smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
+        regimes = regime_from_smooth_weight(smooth_weight)
 
         # Align PnL
         if 'Date' in pnl_df.columns:
