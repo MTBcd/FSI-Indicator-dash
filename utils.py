@@ -14,6 +14,10 @@ from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.metrics import roc_auc_score
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+# warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 def normalize_loadings(weights):
     """Normalize the loadings vector."""
@@ -375,9 +379,9 @@ def predict_regime_probability(
     X = df_logit[columns]
     y = df_logit['Future_Red']
 
-    # Optional: scale features (uncomment if needed, especially for LogisticRegression)
-    # scaler = StandardScaler()
-    # X = scaler.fit_transform(X)
+    # scale features (uncomment if needed, especially for LogisticRegression)
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
