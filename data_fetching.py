@@ -59,17 +59,12 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
     start_date = pd.to_datetime(start_date)
     if series_map is None:
         series_map = {
-            'VXV': 'VXVCLS',
-            'VIX': 'VIXCLS',
-            'OVX': 'OVXCLS',
             'USD Overnight Rate': 'OBFR',
-            '3M T-Bill': 'DTB3',
-            '10Y Yield': 'DGS10',
             '2Y Yield': 'DGS2',
-            'USD Index': 'DTWEXBGS',
             'FRED RRP': 'RRPONTSYD',
             'US Corp OAS': 'BAMLC0A0CM',
-            'US HY OAS': 'BAMLH0A0HYM2'
+            'US HY OAS': 'BAMLH0A0HYM2',
+            'US BBB OAS': 'BAMLC0A4CBBBEY'
         }
     result = {}
     for out_col, fred_id in series_map.items():
@@ -101,16 +96,19 @@ def get_all_series(config):
     # --- Add FMP or other data ---
     data['MOVE Index'] = fetch_fmp_data('^MOVE', fmp_api_key, start_date=start_date_str)
     data['Gold Price'] = fetch_fmp_data('GC=F', fmp_api_key, start_date=start_date_str)
-    data['USD Index (DXY)'] = fetch_fmp_data('DX-Y.NYB', fmp_api_key, start_date=start_date_str)
-    data['HYG-LQD Spread'] = get_hyg_lqd_spread(fmp_api_key, start_date=start_date_str)
+    data['VIX'] = fetch_fmp_data('^VIX', fmp_api_key, start_date=start_date_str)
+    data['VIX3M'] = fetch_fmp_data('^VIX3M', fmp_api_key, start_date=start_date_str)
+    data['10Y Yield'] = fetch_fmp_data('^TNX', fmp_api_key, start_date=start_date_str)
+    data['3M T-Bill'] = fetch_fmp_data('^IRX', fmp_api_key, start_date=start_date_str)
+    data['USDJPY'] = fetch_fmp_data('USDJPY', fmp_api_key, start_date=start_date_str)
 
     # --- Example spreads using FRED data already loaded ---
     if '10Y Yield' in data and '2Y Yield' in data:
         data['10Y-2Y Slope'] = data['10Y Yield'] - data['2Y Yield']
     if '10Y Yield' in data and '3M T-Bill' in data:
         data['10Y-3M Slope'] = data['10Y Yield'] - data['3M T-Bill']
-    if 'VIX' in data and 'VXV' in data:
-        data['VIX-VXV Spread'] = data['VIX'] - data['VXV']
+    if 'VIX' in data and 'VIX3M' in data:
+        data['VIX-VIX3M Spread'] = data['VIX'] - data['VIX3M']
 
     # --- Combine all into DataFrame, filter to start_date ---
     df_final = pd.concat(data, axis=1)
