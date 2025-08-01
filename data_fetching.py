@@ -8,15 +8,85 @@ import requests
 import logging
 from fredapi import Fred
 import configparser
+from datetime import datetime
 
 # ======== Config Loader ==========
 
 config = configparser.ConfigParser()
 config.read('config.ini')
 
+Start_Date = pd.to_datetime(config['data']['start_date'])
+Start_date = config['data']['start_date']
+today_date = pd.to_datetime(datetime.today())
+
 # ======== FMP PRICE DATA ==========
 
-def get_price_series(ticker, api_key, start_date="2017-01-01"):
+def get_nyfed_rates_from_excel(start_date="2015-01-01", end_date=None):
+    """
+    Download SOFR, OBFR, EFFR from NY Fed via official Excel file (or path).
+    Returns DataFrame with ['EFFR', 'OBFR', 'SOFR'] columns indexed by date.
+    """
+    if end_date is None:
+        from datetime import datetime
+        end_date = datetime.today().strftime('%Y-%m-%d')
+    url = (
+        f"https://markets.newyorkfed.org/read?startDt={start_date}&endDt={end_date}"
+        "&eventCodes=505,500,520&productCode=50&sort=postDt:-1,eventCode:1&format=xlsx"
+    )
+    try:
+        df = pd.read_excel(url)
+        df = df[['Effective Date', 'Rate Type', 'Rate (%)']]
+        df['Effective Date'] = pd.to_datetime(df['Effective Date'])
+        df = df[df['Effective Date'] >= pd.to_datetime(start_date)]
+        # Pivot: date rows, rate type columns
+        rates = df.pivot(index='Effective Date', columns='Rate Type', values='Rate (%)')
+        # Enforce canonical column order
+        for col in ['EFFR', 'OBFR', 'SOFR']:
+            if col not in rates.columns:
+                rates[col] = np.nan
+        rates = rates[['EFFR', 'OBFR', 'SOFR']]
+        rates = rates.sort_index()
+        return rates
+    except Exception as e:
+        logging.error(f"Failed to fetch NY Fed Excel rates: {e}")
+        return pd.DataFrame()
+
+
+def get_treasury_yield_series(maturity='year2', api_key=None, start_date=Start_Date):
+    """
+    Fetches the specified Treasury yield series (e.g., 'year2', 'year10') from FMP.
+    Args:
+        maturity: str, one of ['month1', 'month2', ..., 'year1', 'year2', ..., 'year30']
+        api_key: str, your FMP API key
+        start_date: str, earliest date (YYYY-MM-DD)
+    Returns:
+        pd.Series with Date index and yield values
+    """
+    url = f"https://financialmodelingprep.com/stable/treasury-rates?from={start_date}&to={today_date}&apikey={api_key}"   # https://financialmodelingprep.com/stable/treasury-rates?from={Start_Date}&to={today_date}&apikey={api_key}
+    try:
+        resp = requests.get(url)
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            logging.warning(f"No treasury yield data found for {maturity} at v4 endpoint.")
+            return pd.Series(dtype=float, name=f"{maturity} Treasury Yield")
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df[df['date'] >= pd.to_datetime(start_date)]
+        if maturity not in df.columns:
+            logging.warning(f"Maturity {maturity} not found in data columns: {df.columns.tolist()}")
+            return pd.Series(dtype=float, name=f"{maturity} Treasury Yield")
+        # Convert string values to float
+        df[maturity] = pd.to_numeric(df[maturity], errors='coerce')
+        df = df.set_index('date').sort_index()
+        s = df[maturity].dropna()
+        s.name = f"{maturity.upper()} FMP V4"
+        return s
+    except Exception as e:
+        logging.error(f"Error fetching FMP v4 treasury yield data for {maturity}: {e}")
+        return pd.Series(dtype=float, name=f"{maturity} Treasury Yield")
+
+
+def get_price_series(ticker, api_key, start_date=Start_Date):
     url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?from={start_date}&apikey={api_key}"
     try:
         resp = requests.get(url)
@@ -32,10 +102,10 @@ def get_price_series(ticker, api_key, start_date="2017-01-01"):
         logging.error(f"Error fetching FMP price data for {ticker}: {e}")
         return pd.Series(dtype=float, name=f"{ticker} Price")
 
-def fetch_fmp_data(ticker, api_key, start_date="2017-01-01"):
+def fetch_fmp_data(ticker, api_key, start_date=Start_Date):
     return get_price_series(ticker, api_key, start_date)
 
-def get_hyg_lqd_spread(api_key, start_date="2017-01-01"):
+def get_hyg_lqd_spread(api_key, start_date=Start_Date):
     hyg = get_price_series('HYG', api_key, start_date=start_date)
     lqd = get_price_series('LQD', api_key, start_date=start_date)
     common_idx = hyg.index.intersection(lqd.index)
@@ -59,9 +129,9 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
     start_date = pd.to_datetime(start_date)
     if series_map is None:
         series_map = {
-            'USD Overnight Rate': 'OBFR',
-            '2Y Yield': 'DGS2',
-            'FRED RRP': 'RRPONTSYD',
+            # 'USD Overnight Rate': 'OBFR',
+            # '2Y Yield': 'DGS2',
+            # 'FRED RRP': 'RRPONTSYD',
             'US Corp OAS': 'BAMLC0A0CM',
             'US HY OAS': 'BAMLH0A0HYM2',
             'US BBB OAS': 'BAMLC0A4CBBBEY'
@@ -84,7 +154,7 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
 def get_all_series(config):
     fred_api_key = config['data']['fred_api_key']
     fmp_api_key = config['data']['fmp_api_key']
-    start_date = pd.to_datetime(config['data']['start_date'])
+    start_date = Start_Date
     start_date_str = str(start_date.date())
 
     data = {}
@@ -98,9 +168,18 @@ def get_all_series(config):
     data['Gold Price'] = fetch_fmp_data('GC=F', fmp_api_key, start_date=start_date_str)
     data['VIX'] = fetch_fmp_data('^VIX', fmp_api_key, start_date=start_date_str)
     data['VIX3M'] = fetch_fmp_data('^VIX3M', fmp_api_key, start_date=start_date_str)
-    data['10Y Yield'] = fetch_fmp_data('^TNX', fmp_api_key, start_date=start_date_str)
+    # data['10Y Yield'] = fetch_fmp_data('^TNX', fmp_api_key, start_date=start_date_str)
     data['3M T-Bill'] = fetch_fmp_data('^IRX', fmp_api_key, start_date=start_date_str)
     data['USDJPY'] = fetch_fmp_data('USDJPY', fmp_api_key, start_date=start_date_str)
+    # data['federalFunds'] = fetch_fmp_data('federalFunds', fmp_api_key, start_date=start_date_str)
+    data['10Y Yield'] = get_treasury_yield_series('year10', fmp_api_key, start_date=start_date_str)
+    data['2Y Yield'] = get_treasury_yield_series('year2', fmp_api_key, start_date=start_date_str)
+
+    # --- NY Fed Official Rates from Excel (preferred over CSV API) ---
+    nyfed_rates = get_nyfed_rates_from_excel(start_date=start_date_str)
+    if not nyfed_rates.empty:
+        for col in ['EFFR']:    #'OBFR', 
+            data[col] = nyfed_rates[col]
 
     # --- Example spreads using FRED data already loaded ---
     if '10Y Yield' in data and '2Y Yield' in data:

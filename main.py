@@ -292,7 +292,7 @@ def load_configuration(config_file='config.ini'):
     config.read(config_file)
     return config
 
-def merge_data(config, max_age_hours=12):
+def merge_data(config, max_age_hours=0):
     """
     Loads processed data from cache if recent, otherwise runs full pipeline and caches result.
     """
@@ -381,8 +381,8 @@ def merge_data(config, max_age_hours=12):
                 df[f'OVX_dev_{window}'] = moving_average_deviation(df['OVX'], window)
             if 'VIX3M' in df.columns:
                 df[f'VIX3M_dev_{window}'] = moving_average_deviation(df['VIX3M'], window)
-            if 'VIX-VIX3M Spread' in df.columns:
-                df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(df['VIX-VIX3M Spread'], window)
+            # if 'VIX-VIX3M Spread' in df.columns:
+            #     df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(df['VIX-VIX3M Spread'], window)
 
             # --- Safe-Haven / FX ---
             if 'Gold Price' in df.columns:
@@ -395,10 +395,14 @@ def merge_data(config, max_age_hours=12):
             # --- Rates ---
             # if '1Y Treasury Yield' in df.columns:
             #     df[f'1Y_rate_{window}'] = absolute_deviation(df['1Y Treasury Yield'], window, invert=True)
-            if '2Y Yield' in df.columns:
-                df[f'2Y_rate_{window}'] = absolute_deviation(df['2Y Yield'], window, invert=True)
+            # if '2Y Yield' in df.columns:
+            #     df[f'2Y_rate_{window}'] = absolute_deviation(df['2Y Yield'], window, invert=True)
             if '3M T-Bill' in df.columns:
                 df[f'3M_TBill_stress_{window}'] = absolute_deviation_rotated(df['3M T-Bill'], window)
+            if '2Y Yield' in df.columns:
+                df[f'2Y_rate_{window}'] = absolute_deviation(df['2Y Yield'], window, invert=True)
+            if '10Y Yield' in df.columns:
+                df[f'10Y_rate_{window}'] = absolute_deviation(df['10Y Yield'], window, invert=True)
 
             # --- Credit & OAS ---
             if 'US IG OAS' in df.columns:
@@ -411,16 +415,18 @@ def merge_data(config, max_age_hours=12):
                 df[f'BBB_OAS_dev_{window}'] = absolute_deviation(df['US BBB OAS'], window)
 
             # --- Funding & Liquidity ---
-            if 'USD Overnight Rate' in df.columns:
-                df[f'USDO_rate_dev_{window}'] = moving_average_deviation(df['USD Overnight Rate'], window, invert=True)
-            if 'FRED RRP' in df.columns:
-                df[f'FRED_RRP_stress_{window}'] = absolute_deviation_rotated(df['FRED RRP'], window)
+            # if 'OBFR Rate' in df.columns:
+            #     df[f'OBFR_rate_dev_{window}'] = moving_average_deviation(df['OBFR Rate'], window)
+            if 'EFFR' in df.columns:
+                df[f'EFFR_stress_{window}'] = absolute_deviation(df['EFFR'], window)
             if 'USD Index (DXY)' in df.columns:
                 df[f'USD_stress_{window}'] = moving_average_deviation(df['USD Index (DXY)'], window, invert=True)
+            # if 'federalFunds' in df.columns:
+            #     df[f'federalFunds_{window}'] = moving_average_deviation(df['federalFunds'], window, invert=True)
 
             # --- Slope & Spreads ---
-            if '10Y-2Y Slope' in df.columns:
-                df[f'10Y_2Y_slope_dev_{window}'] = absolute_deviation(df['10Y-2Y Slope'], window, invert=True)
+            # if '10Y-2Y Slope' in df.columns:
+            #     df[f'10Y_2Y_slope_dev_{window}'] = absolute_deviation(df['10Y-2Y Slope'], window, invert=True)
             if '10Y-3M Slope' in df.columns:
                 df[f'10Y_3M_slope_dev_{window}'] = absolute_deviation(df['10Y-3M Slope'], window, invert=True)
 
@@ -433,10 +439,10 @@ def merge_data(config, max_age_hours=12):
         # --- 7. Drop raw columns to keep only engineered features ---
         raw_cols = [
             'VIX', 'MOVE Index', 'USD Index (DXY)', 'Gold Price',
-            '10Y Yield', 'USD Overnight Rate', 'FRED RRP Volume', '3M T-Bill', 'US BBB OAS',
-            'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield',
-            'SPY P/E', '10Y-2Y Slope', '10Y-3M Slope', 'VIX3M', 'VIX-VIX3M Spread',
-            'HYG-LQD Spread', 'SPY P/B', 'OVX', 'VXV', 'VIX-VXV Spread', 'USDJPY',
+            '10Y Yield', 'USD Overnight Rate', 'FRED RRP Volume', '3M T-Bill', 'US BBB OAS', '2Y Yield',
+            'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield', '2Y Yield fmp', '10Y Yield',
+            'SPY P/E', '10Y-2Y Slope', '10Y-3M Slope', 'VIX3M', 'VIX-VIX3M Spread', 'federalFunds', '10Y Yield fmp',
+            'HYG-LQD Spread', 'SPY P/B', 'OVX', 'VXV', 'VIX-VXV Spread', 'USDJPY', "EFFR", "OBFR Rate",
             "3M T-Bill", "10Y Yield", "2Y Yield", "USD Index", "FRED RRP", "US Corp OAS"
         ]
         df.drop(raw_cols, axis=1, inplace=True, errors='ignore')
@@ -522,12 +528,11 @@ def main():
             'VXV_dev_250', 'VIX_VIX3M_spread_dev_250'
         ],
         'Rates': [
-            '2Y_rate_250',
-            '10Y_2Y_slope_dev_250', '10Y_3M_slope_dev_250',
-            'USDO_rate_dev_250'
+            '2Y_rate_250','10Y_3M_slope_dev_250',
+            # 'OBFR_rate_dev_250', '10Y_2Y_slope_dev_250'
         ],
         'Funding': [
-            '3M_TBill_stress_250', 'FRED_RRP_stress_250', 'USD_stress_250'
+            '3M_TBill_stress_250', 'EFFR_stress_250', 'USD_stress_250'
         ],
         'FX/Safe_Haven': [
             '10Y_rate_250', 'Gold_dev_250', 'USDJPY_dev_250'
