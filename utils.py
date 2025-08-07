@@ -454,7 +454,6 @@ def predict_regime_probability(
     Returns most recent probability, full predicted probability series, variable importance,
     best estimator, and cross-validated metric.
     """
-
     if 'Regime' not in df.columns:
         raise ValueError("'Regime' column required for regime prediction.")
 
@@ -462,17 +461,20 @@ def predict_regime_probability(
     df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
     df_logit = df.dropna()
 
-    # Features
+    # --- Build feature set as a DataFrame and remember names
     exclude = ['Future_Red', 'Regime', 'HMM_State']
     if columns is None:
         columns = [c for c in df_logit.columns if c not in exclude]
-    X = df_logit[columns]
+    X = df_logit[columns]                      # keep as DataFrame
     y = df_logit['Future_Red']
+    feature_cols = X.columns.tolist()          # <-- remember names
 
-    # scale features (uncomment if needed, especially for LogisticRegression)
+    # --- Scale but preserve DataFrame structure
     scaler = StandardScaler()
-    X = scaler.fit_transform(X)
+    X_scaled = scaler.fit_transform(X)
+    X = pd.DataFrame(X_scaled, columns=feature_cols, index=df_logit.index)  # <-- wrap back to DF
 
+    # StratifiedKFold for classification
     tscv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
     # Hyperparameter grids
@@ -525,16 +527,12 @@ def predict_regime_probability(
     # Most recent probability
     most_recent_proba = y_proba[-1]
 
-    # Variable importance
+    # Variable importance using preserved names
     if model_type == 'xgboost':
         importance = best_model.feature_importances_
     else:
         importance = np.abs(best_model.coef_[0])
-    feature_importance = dict(zip(X.columns, importance))
-
-    # Optionally print the best parameters and cross-validated score
-    # print("Best Params:", search.best_params_)
-    # print("Best Cross-Validated Score:", best_score)
+    feature_importance = dict(zip(feature_cols, importance))  # <-- use saved names
 
     return most_recent_proba, proba_full, feature_importance, best_model, best_score
 
