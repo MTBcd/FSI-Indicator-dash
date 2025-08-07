@@ -279,7 +279,7 @@ from plotting import (
 from utils import (
     aggregate_contributions_by_group, smooth_transition_regime, regime_from_smooth_weight,
     moving_average_deviation, absolute_deviation_rotated, absolute_deviation,
-    classify_risk_regime_hybrid, kalman_impute, impute_data
+    classify_risk_regime_hybrid, kalman_impute, impute_data, classify_adaptive_regime
 )
 
 
@@ -391,6 +391,8 @@ def merge_data(config, max_age_hours=0):
                 df[f'10Y_rate_{window}'] = absolute_deviation(df['10Y Yield'], window, invert=True)
             if 'USDJPY' in df.columns:
                 df[f'USDJPY_dev_{window}'] = moving_average_deviation(df['USDJPY'], window, invert=True)
+            if 'USD Index (DXY)' in df.columns:
+                df[f'USD_stress_{window}'] = moving_average_deviation(df['USD Index (DXY)'], window, invert=True)
 
             # --- Rates ---
             # if '1Y Treasury Yield' in df.columns:
@@ -401,8 +403,8 @@ def merge_data(config, max_age_hours=0):
                 df[f'3M_TBill_stress_{window}'] = absolute_deviation_rotated(df['3M T-Bill'], window)
             if '2Y Yield' in df.columns:
                 df[f'2Y_rate_{window}'] = absolute_deviation(df['2Y Yield'], window, invert=True)
-            if '10Y Yield' in df.columns:
-                df[f'10Y_rate_{window}'] = absolute_deviation(df['10Y Yield'], window, invert=True)
+            # if '10Y Yield' in df.columns:
+            #     df[f'10Y_rate_{window}'] = absolute_deviation(df['10Y Yield'], window, invert=True)
 
             # --- Credit & OAS ---
             if 'US IG OAS' in df.columns:
@@ -419,8 +421,9 @@ def merge_data(config, max_age_hours=0):
             #     df[f'OBFR_rate_dev_{window}'] = moving_average_deviation(df['OBFR Rate'], window)
             if 'EFFR' in df.columns:
                 df[f'EFFR_stress_{window}'] = absolute_deviation(df['EFFR'], window)
-            if 'USD Index (DXY)' in df.columns:
-                df[f'USD_stress_{window}'] = moving_average_deviation(df['USD Index (DXY)'], window, invert=True)
+            if 'EFFR_VOLUME' in df.columns:
+                df[f'EFFR_VOLUME_{window}'] = absolute_deviation(df['EFFR_VOLUME'], window)
+
             # if 'federalFunds' in df.columns:
             #     df[f'federalFunds_{window}'] = moving_average_deviation(df['federalFunds'], window, invert=True)
 
@@ -443,7 +446,7 @@ def merge_data(config, max_age_hours=0):
             'US IG OAS', 'US HY OAS', '1Y Treasury Yield', '2Y Treasury Yield', '2Y Yield fmp', '10Y Yield',
             'SPY P/E', '10Y-2Y Slope', '10Y-3M Slope', 'VIX3M', 'VIX-VIX3M Spread', 'federalFunds', '10Y Yield fmp',
             'HYG-LQD Spread', 'SPY P/B', 'OVX', 'VXV', 'VIX-VXV Spread', 'USDJPY', "EFFR", "OBFR Rate",
-            "3M T-Bill", "10Y Yield", "2Y Yield", "USD Index", "FRED RRP", "US Corp OAS"
+            "3M T-Bill", "10Y Yield", "2Y Yield", "USD Index", "FRED RRP", "US Corp OAS", "EFFR_VOLUME"
         ]
         df.drop(raw_cols, axis=1, inplace=True, errors='ignore')
 
@@ -529,7 +532,6 @@ def main():
         ],
         'Rates': [
             '2Y_rate_250','10Y_3M_slope_dev_250',
-            # 'OBFR_rate_dev_250', '10Y_2Y_slope_dev_250'
         ],
         'Funding': [
             '3M_TBill_stress_250', 'EFFR_stress_250', 'USD_stress_250'
@@ -546,7 +548,7 @@ def main():
 
     # === Regime Classification ===
     fsi = variable_contribs['FSI']
-    regimes = classify_risk_regime_hybrid(fsi)
+    regimes = classify_adaptive_regime(fsi, quantile_window=1260) #classify_risk_regime_hybrid  2520 1260
 
     print("Regime classification value counts:\n", regimes.value_counts())
 

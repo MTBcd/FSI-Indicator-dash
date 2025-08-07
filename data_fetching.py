@@ -21,35 +21,109 @@ today_date = pd.to_datetime(datetime.today())
 
 # ======== FMP PRICE DATA ==========
 
-def get_nyfed_rates_from_excel(start_date="2015-01-01", end_date=None):
-    """
-    Download SOFR, OBFR, EFFR from NY Fed via official Excel file (or path).
-    Returns DataFrame with ['EFFR', 'OBFR', 'SOFR'] columns indexed by date.
-    """
+def get_nyfed_rates_from_excel(start_date=Start_Date, end_date=None):
+    import pandas as pd
+    import numpy as np
+    import logging
+    from datetime import datetime
+
     if end_date is None:
-        from datetime import datetime
         end_date = datetime.today().strftime('%Y-%m-%d')
     url = (
         f"https://markets.newyorkfed.org/read?startDt={start_date}&endDt={end_date}"
-        "&eventCodes=505,500,520&productCode=50&sort=postDt:-1,eventCode:1&format=xlsx"
+        "&eventCodes=500&productCode=50&sort=postDt:-1,eventCode:1&format=xlsx"
     )
     try:
         df = pd.read_excel(url)
-        df = df[['Effective Date', 'Rate Type', 'Rate (%)']]
         df['Effective Date'] = pd.to_datetime(df['Effective Date'])
-        df = df[df['Effective Date'] >= pd.to_datetime(start_date)]
-        # Pivot: date rows, rate type columns
+
+        # Pivot for rates
         rates = df.pivot(index='Effective Date', columns='Rate Type', values='Rate (%)')
-        # Enforce canonical column order
-        for col in ['EFFR', 'OBFR', 'SOFR']:
+
+        # Find the actual volume column
+        volume_col = None
+        for col in df.columns:
+            if 'volume' in col.lower():
+                volume_col = col
+                break
+
+        if volume_col:
+            effr_vol = df[df['Rate Type'] == 'EFFR'][['Effective Date', volume_col]]
+            effr_vol = effr_vol.set_index('Effective Date')
+            effr_vol = effr_vol[~effr_vol.index.duplicated(keep='first')]
+            rates['EFFR_VOLUME'] = effr_vol[volume_col]
+        else:
+            rates['EFFR_VOLUME'] = np.nan
+
+        for col in ['EFFR', 'EFFR_VOLUME']:
             if col not in rates.columns:
                 rates[col] = np.nan
-        rates = rates[['EFFR', 'OBFR', 'SOFR']]
+        rates = rates[['EFFR', 'EFFR_VOLUME']]
         rates = rates.sort_index()
         return rates
     except Exception as e:
         logging.error(f"Failed to fetch NY Fed Excel rates: {e}")
         return pd.DataFrame()
+
+
+# def get_nyfed_rates_from_excel(start_date="2015-01-01", end_date=None):
+#     """
+#     Download SOFR, OBFR, EFFR from NY Fed via official Excel file (or path).
+#     Returns DataFrame with ['EFFR', 'EFFR_VOLUME'] columns indexed by date.
+#     """
+#     import pandas as pd
+#     import numpy as np
+#     import logging
+
+#     if end_date is None:
+#         from datetime import datetime
+#         end_date = datetime.today().strftime('%Y-%m-%d')
+#     url = (
+#         f"https://markets.newyorkfed.org/read?startDt={start_date}&endDt={end_date}"
+#         "&eventCodes=500&productCode=50&sort=postDt:-1,eventCode:1&format=xlsx"
+#     )
+#     try:
+#         # Load the file, always use the first sheet if unsure
+#         df = pd.read_excel(url, sheet_name=0)
+#         df['Effective Date'] = pd.to_datetime(df['Effective Date'])
+
+#         # Filter for EFFR rows only
+#         effr = df[df['Rate Type'] == 'EFFR'].copy()
+#         effr.set_index('Effective Date', inplace=True)
+        
+#         # Rename columns for clarity and select only necessary ones
+#         columns = effr.columns
+#         effr_col = 'Rate (%)'
+#         effr_vol_col = None
+
+#         # Find the correct volume column, in case of future changes
+#         for col in columns:
+#             if 'volume' in col.lower():
+#                 effr_vol_col = col
+#                 break
+        
+#         # Build the output DataFrame
+#         result = pd.DataFrame(index=effr.index)
+#         result['EFFR'] = effr[effr_col]
+#         if effr_vol_col:
+#             result['EFFR_VOLUME'] = effr[effr_vol_col]
+#         else:
+#             result['EFFR_VOLUME'] = np.nan
+
+#         # Only keep the requested date range
+#         mask = (result.index >= pd.to_datetime(start_date))
+#         if end_date:
+#             mask = mask & (result.index <= pd.to_datetime(end_date))
+#         result = result[mask]
+
+#         # Sort by date
+#         result = result.sort_index()
+#         return result
+
+#     except Exception as e:
+#         logging.error(f"Failed to fetch NY Fed Excel rates: {e}")
+#         return pd.DataFrame()
+
 
 
 def get_treasury_yield_series(maturity='year2', api_key=None, start_date=Start_Date):
@@ -178,7 +252,7 @@ def get_all_series(config):
     # --- NY Fed Official Rates from Excel (preferred over CSV API) ---
     nyfed_rates = get_nyfed_rates_from_excel(start_date=start_date_str)
     if not nyfed_rates.empty:
-        for col in ['EFFR']:    #'OBFR', 
+        for col in ['EFFR', "EFFR_VOLUME"]:    #'OBFR', 
             data[col] = nyfed_rates[col]
 
     # --- Example spreads using FRED data already loaded ---

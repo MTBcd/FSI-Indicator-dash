@@ -129,54 +129,145 @@ def impute_data(df):
     df_imputed = pd.DataFrame(imputer.fit_transform(df), index=df.index, columns=df.columns)
     return df_imputed
 
-# def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.9, simplify_to_3=False):
-#     """
-#     Hybrid regime classification combining quantile levels and volatility spikes.
 
-#     Parameters:
-#         fsi_series (pd.Series): FSI index series.
-#         vol_window (int): Rolling window for FSI volatility.
-#         vol_spike_quantile (float): Threshold for volatility change to qualify as a spike.
-#         simplify_to_3 (bool): If True, collapse Amber and Red into a single 'Red'.
 
-#     Returns:
-#         pd.Series: Regime labels (Green, Yellow, Amber, Red)
-#     """
-#     try:
-#         # Compute ECDF percentiles
-#         ranks = rankdata(fsi_series)
-#         percentiles = pd.Series(ranks / len(fsi_series), index=fsi_series.index)
 
-#         # Volatility change
-#         fsi_vol = fsi_series.rolling(vol_window).std()
-#         fsi_vol_delta = fsi_vol.diff()
-#         vol_spike_threshold = fsi_vol_delta.quantile(vol_spike_quantile)
-#         vol_spike_flags = (fsi_vol_delta > vol_spike_threshold).reindex(fsi_series.index).fillna(False)
+##############################
 
-#         # Regime classification logic
-#         def hybrid_classify(fsi_val, pct, vol_spike):
-#             if vol_spike:
-#                 if pct <= 0.35: return 'Yellow'
-#                 elif pct <= 0.75: return 'Amber'
-#                 elif pct <= 0.95: return 'Red'
-#                 else: return 'Red'
-#             else:
-#                 if pct <= 0.35: return 'Green'
-#                 elif pct <= 0.75: return 'Yellow'
-#                 elif pct <= 0.95: return 'Amber'
-#                 else: return 'Red'
 
-#         regimes = pd.Series(index=fsi_series.index, dtype='object')
-#         for date in fsi_series.index:
-#             regimes[date] = hybrid_classify(fsi_series[date], percentiles[date], vol_spike_flags[date])
+def adaptive_quantile_thresholds(series, window=500, quantiles=(0.40, 0.75, 0.95)):
+    q_green = series.rolling(window, min_periods=window//2).quantile(quantiles[0])
+    q_amber = series.rolling(window, min_periods=window//2).quantile(quantiles[1])
+    q_red   = series.rolling(window, min_periods=window//2).quantile(quantiles[2])
+    thresholds = pd.DataFrame({
+        'green': q_green,
+        'amber': q_amber,
+        'red': q_red
+    })
+    return thresholds
 
-#         if simplify_to_3:
-#             regimes = regimes.replace({'Amber': 'Red'})
+def ewma_volatility(series, lambda_=0.94):
+    returns = series.pct_change().dropna()
+    squared_returns = returns ** 2
+    span = (2 / (1 - lambda_)) - 1
+    ewma_vol = squared_returns.ewm(span=span, min_periods=30).mean().apply(np.sqrt)
+    return ewma_vol.reindex(series.index).fillna(method='bfill')
 
-#         return regimes
-#     except Exception as e:
-#         logging.error(f"Error classifying risk regime: {e}", exc_info=True)
-#         return pd.Series()
+def volatility_spike_flags(series, vol_window=250, spike_quantile=0.9, lambda_=0.94):
+    ewma_vol = ewma_volatility(series, lambda_)
+    vol_change = ewma_vol.diff()
+    spike_threshold = vol_change.rolling(vol_window).quantile(spike_quantile)
+    spike_flags = vol_change > spike_threshold
+    return spike_flags.fillna(False)
+
+def classify_adaptive_regime(fsi_series, quantile_window=500, vol_window=250, spike_quantile=0.9, lambda_=0.94):
+    thresholds = adaptive_quantile_thresholds(fsi_series, window=quantile_window)
+    spikes = volatility_spike_flags(fsi_series, vol_window=vol_window, spike_quantile=spike_quantile, lambda_=lambda_)
+    regimes = pd.Series(index=fsi_series.index, dtype='object')
+    for date in fsi_series.index:
+        try:
+            fsi_value = fsi_series.loc[date]
+            green_thr = thresholds.at[date, 'green']
+            amber_thr = thresholds.at[date, 'amber']
+            red_thr = thresholds.at[date, 'red']
+            if spikes.at[date]:
+                if fsi_value <= green_thr:
+                    regimes.at[date] = 'Yellow'
+                elif fsi_value <= amber_thr:
+                    regimes.at[date] = 'Amber'
+                else:
+                    regimes.at[date] = 'Red'
+            else:
+                if fsi_value <= green_thr:
+                    regimes.at[date] = 'Green'
+                elif fsi_value <= amber_thr:
+                    regimes.at[date] = 'Yellow'
+                elif fsi_value <= red_thr:
+                    regimes.at[date] = 'Amber'
+                else:
+                    regimes.at[date] = 'Red'
+        except Exception as e:
+            regimes.at[date] = 'Green'
+    return regimes.reindex(fsi_series.index).ffill().bfill()
+
+##################################
+
+
+def classify_adaptive_regime_hybrid_fallback(
+    fsi_series, 
+    quantile_window=500, 
+    vol_window=250, 
+    spike_quantile=0.9, 
+    lambda_=0.94
+):
+    # 1. Compute rolling quantile thresholds as usual
+    thresholds = adaptive_quantile_thresholds(fsi_series, window=quantile_window)
+    spikes = volatility_spike_flags(fsi_series, vol_window=vol_window, spike_quantile=spike_quantile, lambda_=lambda_)
+    regimes = pd.Series(index=fsi_series.index, dtype='object')
+
+    # 2. Determine cutoff where quantile window is populated (first non-NaN green)
+    valid_quantile_mask = ~thresholds['green'].isna()
+    first_valid_idx = valid_quantile_mask.idxmax()  # first index where green is not nan
+    if isinstance(first_valid_idx, bool):  # If all values are False, idxmax returns False
+        first_valid_idx = None
+
+    # 3. For initial region, use hybrid (static quantile) approach
+    if first_valid_idx is not None:
+        # Hybrid regime for first_valid_idx
+        pre_regime = classify_risk_regime_hybrid(
+            fsi_series.loc[:first_valid_idx],
+            vol_window=20,  # Use your chosen value
+            vol_spike_quantile=spike_quantile
+        )
+        regimes.loc[:first_valid_idx] = pre_regime
+
+        # Rolling regime for rest
+        for date in fsi_series.index[fsi_series.index.get_loc(first_valid_idx):]:
+            try:
+                fsi_value = fsi_series.loc[date]
+                green_thr = thresholds.at[date, 'green']
+                amber_thr = thresholds.at[date, 'amber']
+                red_thr = thresholds.at[date, 'red']
+                if pd.isna(green_thr) or pd.isna(amber_thr) or pd.isna(red_thr):
+                    regimes.at[date] = 'Yellow'
+                    continue
+                if spikes.at[date]:
+                    if fsi_value <= green_thr:
+                        regimes.at[date] = 'Yellow'
+                    elif fsi_value <= amber_thr:
+                        regimes.at[date] = 'Amber'
+                    else:
+                        regimes.at[date] = 'Red'
+                else:
+                    if fsi_value <= green_thr:
+                        regimes.at[date] = 'Green'
+                    elif fsi_value <= amber_thr:
+                        regimes.at[date] = 'Yellow'
+                    elif fsi_value <= red_thr:
+                        regimes.at[date] = 'Amber'
+                    else:
+                        regimes.at[date] = 'Red'
+            except Exception as e:
+                regimes.at[date] = 'Yellow'
+    else:
+        # If for some reason thresholds are always nan, fallback entirely to hybrid
+        regimes = classify_risk_regime_hybrid(
+            fsi_series,
+            vol_window=20,
+            vol_spike_quantile=spike_quantile
+        )
+
+    regimes = regimes.ffill().bfill()
+    return regimes
+
+
+
+##################################
+
+
+
+
+
 
 
 
@@ -226,7 +317,7 @@ def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.
         regimes[nospike_red] = 'Red'
 
         # Fill any missing values (e.g. due to NaN at start) with 'Green'
-        regimes = regimes.fillna('Green')
+        regimes = regimes.fillna('Yellow')
 
         if simplify_to_3:
             regimes = regimes.replace({'Amber': 'Red'})
@@ -235,7 +326,6 @@ def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.
     except Exception as e:
         logging.error(f"Error classifying risk regime: {e}", exc_info=True)
         return pd.Series()
-
 
 
 def smooth_transition_regime(fsi_series, gamma=2.5, c=0.5):

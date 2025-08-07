@@ -6,7 +6,7 @@ import numpy as np
 import chart_studio
 import chart_studio.plotly as py
 import logging
-from utils import smooth_transition_regime, regime_from_smooth_weight
+from utils import smooth_transition_regime, regime_from_smooth_weight, classify_adaptive_regime, classify_adaptive_regime_hybrid_fallback
 import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde, skew, kurtosis
@@ -85,13 +85,18 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
     for _, segment in df.groupby('RegimeShift'):
         regime = segment['Regime'].iloc[0]
         fig.add_vrect(
-            x0=segment.index[0], x1=segment.index[-1],
+            x0=segment.index[0], 
+            x1=segment.index[-1] + pd.Timedelta(days=1),
             fillcolor=colors.get(regime, 'rgba(100,100,100,0.1)'),
             opacity=1, layer="below",
             line_width=0,
             row=row, col=col
         )
 
+def reindex_to_daily(series_or_df, fill_method="ffill"):
+    """Reindex a Series or DataFrame to full daily calendar (including weekends/holidays)."""
+    daily_index = pd.date_range(series_or_df.index.min(), series_or_df.index.max(), freq="D")
+    return series_or_df.reindex(daily_index).fillna(method=fill_method)
 
 def fix_axis_minus(fig, y_min, y_max, n_ticks=5):
     """Fix the display of minus signs on the y-axis."""
@@ -110,7 +115,8 @@ def plot_group_contributions_with_regime(contribs_by_group):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        regimes = regime_from_smooth_weight(smooth_weight)
+        # regimes = regime_from_smooth_weight(smooth_weight)
+        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         fig = make_subplots(
             rows=2, cols=1,
@@ -150,8 +156,11 @@ def plot_group_contributions_with_regime(contribs_by_group):
             legendgroup='Proximity'
         ), row=2, col=1)
 
+        fsi_daily = reindex_to_daily(fsi)
+        regimes_daily = reindex_to_daily(regimes)
+
         # Add regime ribbons to top chart only
-        add_regime_ribbons(fig, fsi, regimes=regimes, row=1, col=1)
+        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, row=1, col=1)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
         # Vertical lines and year labels for every Jan 1st
@@ -240,7 +249,8 @@ def plot_grouped_contributions(contribs_by_group):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        regimes = regime_from_smooth_weight(smooth_weight)
+        # regimes = regime_from_smooth_weight(smooth_weight)
+        regimes = classify_adaptive_regime(fsi, quantile_window=1260)
 
         fig = make_subplots(
             rows=2, cols=1,
