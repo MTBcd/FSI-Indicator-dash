@@ -581,6 +581,28 @@ def run_full_pipeline(n_clicks):
         n_iter=int(config['fsi']['n_iter']),
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
+
+    # --- Enforce a consistent "stress is positive" orientation ---
+    anchor_vars_pref = ['VIX_dev_250', 'MOVE_dev_250', 'HY_OAS_dev_250', 'IG_OAS_dev_250']
+    anchors = [c for c in anchor_vars_pref if c in df.columns]
+
+    if anchors:
+        # Option A: use weights sign on anchors at the most recent date
+        anchor_sign = np.sign(omega_history[anchors].iloc[-1].mean())
+        if anchor_sign < 0:
+            fsi_series *= -1
+            omega_history *= -1
+    else:
+        # Option B (fallback): use correlation with an easy stress proxy if present
+        proxy_candidates = [c for c in ['VIX_dev_250', 'HY_OAS_dev_250'] if c in df.columns]
+        if proxy_candidates:
+            proxy = df[proxy_candidates].mean(axis=1)
+            aligned = pd.concat([fsi_series, proxy], axis=1).dropna()
+            if not aligned.empty and aligned.corr().iloc[0,1] < 0:  # corr(FSI, proxy) < 0 ⇒ flip
+                fsi_series *= -1
+                omega_history *= -1
+    # --- end orientation ---
+
     latest_omega = omega_history.iloc[-1]
     variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
     group_map = {
