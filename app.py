@@ -265,6 +265,7 @@ import diskcache
 import time
 import numpy as np
 
+
 # --- Your framework imports ---
 from main import load_configuration, merge_data
 from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
@@ -276,7 +277,7 @@ from plotting import (
 )
 from utils import (
     aggregate_contributions_by_group,
-    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, classify_risk_regime_hybrid, average_time_in_regime
+    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, classify_risk_regime_hybrid, average_time_in_regime, classify_adaptive_regime_hybrid_fallback
 )
 
 # --- Consistent Regime Colors ---
@@ -624,7 +625,7 @@ def run_full_pipeline(n_clicks):
         ],
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
-    regimes = classify_risk_regime_hybrid(fsi_series)
+    regimes = classify_adaptive_regime_hybrid_fallback(fsi_series, quantile_window=1260)
     df_aligned = df.loc[fsi_series.index].copy()
     df_aligned["Regime"] = regimes.values
 
@@ -779,7 +780,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
                 title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b><br>",
                 xaxis_title="To Regime",
                 yaxis_title="From Regime",
-                margin=dict(l=35, r=35, t=45, b=40),
+                margin=dict(l=45, r=45, t=45, b=40),
                 font=dict(size=11),
                 plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
             )
