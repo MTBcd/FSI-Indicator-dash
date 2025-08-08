@@ -60,18 +60,34 @@ def absolute_deviation(series, window, invert=False):
         return pd.Series()
 
 
-def aggregate_contributions_by_group(contribs, group_map):
-    """Aggregate variable contributions by group."""
-    try:
-        grouped = pd.DataFrame(index=contribs.index)
-        for group, patterns in group_map.items():
-            cols = [col for col in contribs.columns if any(p in col for p in patterns)]
-            grouped[group] = contribs[cols].sum(axis=1)
-        grouped['FSI'] = contribs['FSI']
-        return grouped
-    except Exception as e:
-        logging.error(f"Error aggregating contributions by group: {e}", exc_info=True)
-        return pd.DataFrame()
+def aggregate_contributions_by_group(df, group_map):
+    out = pd.DataFrame(index=df.index)
+    any_found = False
+    for g, cols in group_map.items():
+        present = [c for c in cols if c in df.columns]
+        if not present:
+            logging.warning(f"[GroupMap] No columns found for group '{g}'. Check feature engineering.")
+            out[g] = 0.0
+        else:
+            any_found = True
+            out[g] = df[present].sum(axis=1)
+    out['FSI'] = out.sum(axis=1)
+    if not any_found:
+        raise ValueError("No group columns matched. Verify GROUP_MAP vs engineered features.")
+    return out
+
+# def aggregate_contributions_by_group(contribs, group_map):
+#     """Aggregate variable contributions by group."""
+#     try:
+#         grouped = pd.DataFrame(index=contribs.index)
+#         for group, patterns in group_map.items():
+#             cols = [col for col in contribs.columns if any(p in col for p in patterns)]
+#             grouped[group] = contribs[cols].sum(axis=1)
+#         grouped['FSI'] = contribs['FSI']
+#         return grouped
+#     except Exception as e:
+#         logging.error(f"Error aggregating contributions by group: {e}", exc_info=True)
+#         return pd.DataFrame()
 
 def kalman_impute(series):
     """Impute missing values in a series using Kalman filtering."""
@@ -388,53 +404,6 @@ def run_hmm(df, n_states=4, columns=None):
 
     most_recent_state = int(hidden_states[-1])
     return most_recent_state, df_result, state_probs
-
-# def predict_regime_probability(df, model_type='xgboost', lookahead=20, columns=None):
-#     """
-#     Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression.
-#     Returns most recent probability, full predicted probability series, and variable importance.
-#     """
-#     # Prepare target
-#     if 'Regime' not in df.columns:
-#         raise ValueError("'Regime' column required for regime prediction.")
-
-#     df = df.copy()
-#     df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
-#     df_logit = df.dropna()
-
-#     # Feature columns
-#     exclude = ['Future_Red', 'Regime', 'HMM_State']
-#     if columns is None:
-#         columns = [c for c in df_logit.columns if c not in exclude]
-#     X = df_logit[columns]
-#     y = df_logit['Future_Red']
-
-#     # Split (no shuffle: time series)
-#     X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=False, test_size=0.3)
-
-#     if model_type == 'xgboost':
-#         model = XGBClassifier(n_estimators=200, eval_metric='logloss', use_label_encoder=False, random_state=42)
-#         model.fit(X_train, y_train)
-#         y_proba = model.predict_proba(X_test)[:, 1]
-#         importance = model.feature_importances_
-#     else:
-#         model = LogisticRegression(max_iter=1000)
-#         model.fit(X_train, y_train)
-#         y_proba = model.predict_proba(X_test)[:, 1]
-#         importance = np.abs(model.coef_[0])
-
-#     # Full probability array (align to df)
-#     proba_full = np.full(len(df_logit), np.nan)
-#     proba_full[-len(y_proba):] = y_proba
-
-#     # Most recent predicted probability
-#     most_recent_proba = y_proba[-1]
-#     feature_importance = dict(zip(X_train.columns, importance))
-
-#     # Optional: print classification report (can be commented out)
-#     # print(classification_report(y_test, model.predict(X_test)))
-
-#     return most_recent_proba, proba_full, feature_importance
 
 
 

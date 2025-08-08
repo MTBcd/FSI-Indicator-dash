@@ -51,16 +51,18 @@ event_heights_pnl = {
 }
 
 def add_event_annotations(fig, events_dict, event_heights=None):
-    """Add annotations for market events to the plot."""
+    x0 = fig.layout.xaxis.range[0] if fig.layout.xaxis.range else None
+    x1 = fig.layout.xaxis.range[1] if fig.layout.xaxis.range else None
+
     for date_str, label in sorted(events_dict.items()):
         x = pd.to_datetime(date_str)
+        if x0 and x1 and not (pd.to_datetime(x0) <= x <= pd.to_datetime(x1)):
+            continue  # skip out-of-range
         y = event_heights.get(date_str, 1.01) if event_heights else 1.01
-
         fig.add_annotation(
             x=x,
             y=y,
-            xref='x',
-            yref='paper',
+            xref='x', yref='paper',
             text=label,
             showarrow=False,
             font=dict(size=14, family="Arial"),
@@ -109,24 +111,17 @@ def make_tz_naive(dt):
     return dt.tz_localize(None) if getattr(dt, "tzinfo", None) is not None else dt
 
 
+
 def plot_group_contributions_with_regime(contribs_by_group):
-    """Plot group-level contributions to the FSI with regime highlighting."""
+    """Plot variable-level contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        # regimes = regime_from_smooth_weight(smooth_weight)
         regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
-        fig = make_subplots(
-            rows=2, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.02,
-            row_heights=[0.75, 0.25],
-            # subplot_titles=["FSI Group-Level Contributions", "Transition Proximity"]
-        )
+        fig = go.Figure()
 
-        # === Top Plot: Stacked Area Contributions ===
+        # Stacked area by variable (everything except FSI)
         for col in [c for c in contribs_by_group.columns if c != 'FSI']:
             fig.add_trace(go.Scatter(
                 x=contribs_by_group.index,
@@ -134,9 +129,9 @@ def plot_group_contributions_with_regime(contribs_by_group):
                 stackgroup='one',
                 name=col,
                 legendgroup=col
-            ), row=1, col=1)
+            ))
 
-        # Add FSI line
+        # FSI line
         fig.add_trace(go.Scattergl(
             x=contribs_by_group.index,
             y=fsi,
@@ -144,60 +139,24 @@ def plot_group_contributions_with_regime(contribs_by_group):
             mode='lines',
             line=dict(color='black', width=2, dash='dash'),
             legendgroup='FSI'
-        ), row=1, col=1)
+        ))
 
-        # === Bottom Plot: Transition Proximity ===
-        fig.add_trace(go.Scattergl(
-            x=contribs_by_group.index,
-            y=smooth_weight,
-            name='Transition Proximity',
-            mode='lines',
-            line=dict(color='purple', width=2),
-            legendgroup='Proximity'
-        ), row=2, col=1)
-
+        # Regime ribbons + events
         fsi_daily = reindex_to_daily(fsi)
         regimes_daily = reindex_to_daily(regimes)
-
-        # Add regime ribbons to top chart only
-        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, row=1, col=1)
+        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
-        # Vertical lines and year labels for every Jan 1st
+        # Year markers
         index_min = make_tz_naive(contribs_by_group.index.min())
         index_max = make_tz_naive(contribs_by_group.index.max())
-        year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(contribs_by_group.index.year))])
-        year_starts = [make_tz_naive(d) for d in year_starts]
-        year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
-
-
-
+        year_starts = pd.to_datetime([f"{y}-01-01" for y in sorted(set(contribs_by_group.index.year))])
+        year_starts = [d for d in map(make_tz_naive, year_starts) if index_min <= d <= index_max]
         for d in year_starts:
-            fig.add_vline(
-                x=d,
-                line_width=1.2,
-                line_color="black",
-                opacity=0.5,
-                row="all"
-            )
-            fig.add_annotation(
-                x=d, y=0.28,
-                xref='x', yref='paper',
-                text=str(d.year),
-                showarrow=False,
-                font=dict(size=14, color='black', family='Arial'),
-                xanchor="center",
-                align="center",
-                opacity=0.6,
-                bgcolor="rgba(255,255,255,0.1)",
-                bordercolor="black",
-                borderwidth=0.5,
-                borderpad=2,
-            )
+            fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
         fig.update_layout(
-            height=750,
-            # title="FSI Group-Level Contributions with Transition Proximity",
+            height=650,
             template="plotly_white",
             showlegend=True,
             font=dict(family="Arial", size=13),
@@ -216,20 +175,12 @@ def plot_group_contributions_with_regime(contribs_by_group):
                 gridwidth=1,
                 gridcolor='lightgray'
             ),
-            yaxis2=dict(
-                # title="Transition Proximity",
-                range=[0, 1],
-                showgrid=True,
-                gridwidth=1,
-                gridcolor='lightgray'
-            )
         )
 
         y_min = float(np.nanmin(fsi))
         y_max = float(np.nanmax(fsi))
         fix_axis_minus(fig, y_min, y_max)
 
-        # Standardize all y-axis labels (avoid unicode minus)
         fig.update_yaxes(
             tickformat=".2f",
             separatethousands=False,
@@ -239,28 +190,22 @@ def plot_group_contributions_with_regime(contribs_by_group):
         )
 
         return fig
+
     except Exception as e:
-        logging.error(f"Error plotting group contributions: {e}", exc_info=True)
+        logging.error(f"Error plotting variable-level contributions: {e}", exc_info=True)
         return None
 
+
 def plot_grouped_contributions(contribs_by_group):
-    """Plot grouped contributions to the FSI."""
+    """Plot grouped contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        # regimes = regime_from_smooth_weight(smooth_weight)
-        regimes = classify_adaptive_regime(fsi, quantile_window=1260)
+        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
-        fig = make_subplots(
-            rows=2, cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.02,
-            row_heights=[0.75, 0.25],
-            # subplot_titles=["FSI Group-Level Contributions", "Transition Proximity"]
-        )
+        fig = go.Figure()
 
-        # === Top Plot: Stacked Contributions ===
+        # Stacked area by group (everything except FSI)
         for col in [c for c in contribs_by_group.columns if c != 'FSI']:
             fig.add_trace(go.Scatter(
                 x=contribs_by_group.index,
@@ -268,9 +213,9 @@ def plot_grouped_contributions(contribs_by_group):
                 stackgroup='one',
                 name=col,
                 legendgroup=col
-            ), row=1, col=1)
+            ))
 
-        # FSI Line
+        # FSI line
         fig.add_trace(go.Scattergl(
             x=contribs_by_group.index,
             y=fsi,
@@ -278,57 +223,24 @@ def plot_grouped_contributions(contribs_by_group):
             mode='lines',
             line=dict(color='black', width=2, dash='dash'),
             legendgroup='FSI'
-        ), row=1, col=1)
+        ))
 
-        # === Bottom Plot: Transition Proximity ===
-        fig.add_trace(go.Scattergl(
-            x=contribs_by_group.index,
-            y=smooth_weight,
-            name='Transition Proximity',
-            mode='lines',
-            line=dict(color='purple', width=2),
-            legendgroup='Proximity'
-        ), row=2, col=1)
-
-        # === Add regime ribbons only to top chart ===
-        add_regime_ribbons(fig, fsi, regimes=regimes, row=1, col=1)
+        # Regime ribbons + events
+        fsi_daily = reindex_to_daily(fsi)
+        regimes_daily = reindex_to_daily(regimes)
+        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
-        # Vertical lines for every Jan 1st (no event lines)
+        # Year markers
         index_min = make_tz_naive(contribs_by_group.index.min())
         index_max = make_tz_naive(contribs_by_group.index.max())
-        year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(contribs_by_group.index.year))])
-        year_starts = [make_tz_naive(d) for d in year_starts]
-        year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
-
-
-
+        year_starts = pd.to_datetime([f"{y}-01-01" for y in sorted(set(contribs_by_group.index.year))])
+        year_starts = [d for d in map(make_tz_naive, year_starts) if index_min <= d <= index_max]
         for d in year_starts:
-            fig.add_vline(
-                x=d,
-                line_width=1.2,
-                line_color="black",
-                opacity=0.5,
-                row="all"
-            )
-            fig.add_annotation(
-                x=d, y=0.28,
-                xref='x', yref='paper',
-                text=str(d.year),
-                showarrow=False,
-                font=dict(size=14, color='black', family='Arial'),
-                xanchor="center",
-                align="center",
-                opacity=0.6,
-                bgcolor="rgba(255,255,255,0.1)",
-                bordercolor="black",
-                borderwidth=0.5,
-                borderpad=2,
-            )
+            fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
         fig.update_layout(
-            height=750,
-            # title="FSI Group-Level Contributions with Transition Proximity",
+            height=650,
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
@@ -342,24 +254,16 @@ def plot_grouped_contributions(contribs_by_group):
             ),
             yaxis=dict(
                 title="Contribution to FSI",
-                showgrid=False,
-                gridwidth=1,
-                gridcolor='lightgray'
-            ),
-            yaxis2=dict(
-                # title="Transition Proximity",
-                range=[0, 1],
                 showgrid=True,
                 gridwidth=1,
                 gridcolor='lightgray'
-            )
+            ),
         )
 
         y_min = float(np.nanmin(fsi))
         y_max = float(np.nanmax(fsi))
         fix_axis_minus(fig, y_min, y_max)
 
-        # Standardize all y-axis labels (avoid unicode minus)
         fig.update_yaxes(
             tickformat=".2f",
             separatethousands=False,
@@ -369,41 +273,39 @@ def plot_grouped_contributions(contribs_by_group):
         )
 
         return fig
+
     except Exception as e:
         logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
         return None
 
 
 def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
-    """Plot PnL scatter with *identical* regime background as FSI group chart, with bold blue axes, percent Y-ticks."""
-    import numpy as np
-
+    """PnL scatter with regime ribbons from FSI classification (no proximity trace)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi_series.index = pd.to_datetime(fsi_series.index)
-        
-        # --- Filtering here ---
+
+        # Filter to a consistent start (optional)
         start_chart_date = pd.to_datetime("2019-01-01")
         if 'Date' in pnl_df.columns:
             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
         pnl_df.index = pd.to_datetime(pnl_df.index)
-        
-        # Filter ALL data to start from 2019-01-01
+
         pnl_df = pnl_df.loc[pnl_df.index >= start_chart_date]
         contribs_by_group = contribs_by_group.loc[contribs_by_group.index >= start_chart_date]
         fsi_series = fsi_series.loc[fsi_series.index >= start_chart_date]
 
+        # FSI & regimes
         fsi = contribs_by_group['FSI']
-        smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
-        regimes = regime_from_smooth_weight(smooth_weight)
+        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
-        # Align PnL
+        # Align PnL to FSI dates
         if 'Date' in pnl_df.columns:
             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
         pnl_df.index = pd.to_datetime(pnl_df.index)
         pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
 
-        # --- Y-axis: 3% spacing, percent, bold, dark blue ---
+        # Y-axis grid at 3% spacing
         y_min = float(np.nanmin(pnl_series))
         y_max = float(np.nanmax(pnl_series))
         max_abs = max(abs(y_min), abs(y_max), 0.06)
@@ -411,149 +313,85 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
         yticktext = [f"{int(v*100)}%" for v in yticks]
 
-        fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
+        fig = go.Figure()
 
-        # PnL Scatter
-        fig.add_trace(
-            go.Scattergl(
-                x=pnl_series.index,
-                y=pnl_series.values,
-                mode='markers',
-                marker=dict(size=5, color='Darkblue'),
-                name='PnL'
-            ),
-            row=1, col=1
-        )
+        # PnL points
+        fig.add_trace(go.Scattergl(
+            x=pnl_series.index,
+            y=pnl_series.values,
+            mode='markers',
+            marker=dict(size=5, color='Darkblue'),
+            name='PnL'
+        ))
 
-        add_regime_ribbons(fig, fsi, regimes=regimes, row=1, col=1)
-        # add_event_annotations(fig, market_events, event_heights=event_heights_pnl)
+        # Regime ribbons (match FSI chart)
+        fsi_daily = reindex_to_daily(fsi)
+        regimes_daily = reindex_to_daily(regimes)
+        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
 
-        # Target VaR lines
+        # VaR guard rails
         custom_color_dark = '#3096B9'
         fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
         fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
 
-        # Jan 1st vertical lines
+        # Year lines
         index_min = make_tz_naive(pnl_series.index.min())
         index_max = make_tz_naive(pnl_series.index.max())
         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
-        year_starts = [make_tz_naive(d) for d in year_starts]
-        year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
-
-
+        year_starts = [d for d in map(make_tz_naive, year_starts) if index_min <= d <= index_max]
         for d in year_starts:
-            fig.add_vline(
-                x=d,
-                line_width=1.2,
-                line_color="black",
-                opacity=0.5,
-                row="all"
-            )
+            fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
-        # Annotations
+        # Optional annotations (kept as in your code)
         fig.add_annotation(
-            x=pd.to_datetime("2018-08-31"),
-            y=0,
-            xref='x', yref='y',
-            text="PRE-<br>AQUAE",
-            showarrow=False,
-            font=dict(size=14, color='red'),
-            align="center",
-            bgcolor="rgba(255, 255, 255, 0.5)",
-            bordercolor="red",
-            borderwidth=1,
-            borderpad=4,
+            x=pd.to_datetime("2018-08-31"), y=0, xref='x', yref='y',
+            text="PRE-<br>AQUAE", showarrow=False,
+            font=dict(size=14, color='red'), align="center",
+            bgcolor="rgba(255, 255, 255, 0.5)", bordercolor="red", borderwidth=1, borderpad=4,
         )
-
         fig.add_annotation(
-            x=pd.to_datetime("2023-01-01"),
-            y=-0.15,   # or try y=-0.1, adjust if needed
-            xref='x',
-            yref='paper',    # position relative to the chart (0 = bottom, 1 = top)
-            text="<b>New Risk<br>Controls</b>",
-            showarrow=False,
-            font=dict(size=12, color="black"),
-            align="center",
-            bordercolor="red",
-            borderwidth=1,
-            borderpad=4,
-            bgcolor="rgba(255, 255, 255, 0.5)"
+            x=pd.to_datetime("2023-01-01"), y=-0.15, xref='x', yref='paper',
+            text="<b>New Risk<br>Controls</b>", showarrow=False,
+            font=dict(size=12, color="black"), align="center",
+            bordercolor="red", borderwidth=1, borderpad=4, bgcolor="rgba(255, 255, 255, 0.5)"
         )
 
         neptune_end = pnl_series.index.max()
+        # PORTFOLIO arrow
+        fig.add_shape(type="line", x0="2019-01-01", x1="2024-02-01", y0=-0.13, y1=-0.13,
+                      line=dict(color="darkblue", width=3), xref='x', yref='y', layer="above")
+        fig.add_annotation(x="2019-01-01", y=-0.13, xref='x', yref='y',
+                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                           arrowcolor="darkblue", ax=30, ay=0)
+        fig.add_annotation(x="2024-02-01", y=-0.13, xref='x', yref='y',
+                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                           arrowcolor="darkblue", ax=-30, ay=0)
+        fig.add_annotation(x="2021-07-01", y=-0.155, xref='x', yref='y',
+                           text="<b>PORTFOLIO</b>", showarrow=False,
+                           font=dict(family="Arial Black", size=16, color="darkblue"), align="center")
 
-        # === Horizontal double-arrow "PORTFOLIO" at y = -0.13 ===
-        fig.add_shape(
-            type="line",
-            x0="2019-01-01", x1="2024-02-01",
-            y0=-0.13, y1=-0.13,
-            line=dict(color="darkblue", width=3),
-            xref='x', yref='y',
-            layer="above"
-        )
-        fig.add_annotation(
-            x="2019-01-01", y=-0.13, xref='x', yref='y',
-            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-            arrowcolor="darkblue", ax=30, ay=0,
-            opacity=1
-        )
-        fig.add_annotation(
-            x="2024-02-01", y=-0.13, xref='x', yref='y',
-            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-            arrowcolor="darkblue", ax=-30, ay=0,
-            opacity=1
-        )
-        fig.add_annotation(
-            x="2021-07-01",  # Midpoint
-            y=-0.155,  # Just below the arrow
-            xref='x', yref='y',
-            text="<b>PORTFOLIO</b>",
-            showarrow=False,
-            font=dict(family="Arial Black", size=16, color="darkblue"),
-            align="center"
-        )
-
-        # === Horizontal double-arrow "NEPTUNE" at y = -0.16 ===
-        fig.add_shape(
-            type="line",
-            x0="2024-02-01", x1=neptune_end,
-            y0=-0.13, y1=-0.13,
-            line=dict(color="#3096B9", width=3),
-            xref='x', yref='y',
-            layer="above"
-        )
-        fig.add_annotation(
-            x="2024-02-01", y=-0.13, xref='x', yref='y',
-            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-            arrowcolor="#3096B9", ax=30, ay=0,
-            opacity=1
-        )
-        fig.add_annotation(
-            x=neptune_end, y=-0.13, xref='x', yref='y',
-            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-            arrowcolor="#3096B9", ax=-30, ay=0,
-            opacity=1
-        )
+        # NEPTUNE arrow
+        fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.13, y1=-0.13,
+                      line=dict(color="#3096B9", width=3), xref='x', yref='y', layer="above")
+        fig.add_annotation(x="2024-02-01", y=-0.13, xref='x', yref='y',
+                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                           arrowcolor="#3096B9", ax=30, ay=0)
+        fig.add_annotation(x=neptune_end, y=-0.13, xref='x', yref='y',
+                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                           arrowcolor="#3096B9", ax=-30, ay=0)
         fig.add_annotation(
             x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
-            y=-0.155,  # Just below the arrow
-            xref='x', yref='y',
-            text="<b>NEPTUNE</b>",
-            showarrow=False,
-            font=dict(family="Arial Black", size=16, color="#3096B9"),
-            align="center"
+            y=-0.155, xref='x', yref='y',
+            text="<b>NEPTUNE</b>", showarrow=False,
+            font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
         )
 
-        # --- X-axis: Bold, dark blue, Jan-2021 style, adaptive zoom ---
         fig.update_layout(
             height=600,
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
-                title=dict(
-                    text="<b>Date</b>",
-                    font=dict(family="Arial Black", size=16, color="#163A7B")
-                ),
+                title=dict(text="<b>Date</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
                 rangeslider=dict(visible=False),
                 type='date',
@@ -561,37 +399,521 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
                 gridwidth=1.2,
                 gridcolor='black',
                 tickformatstops=[
-                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),            # Up to 1 year: show only year
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),  # Between 1 month and 1 year: month-year
-                    # (optional) dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),       # For super zoom
+                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),
+                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),
                 ]
             ),
             yaxis=dict(
-                title=dict(
-                    text="<b>PnL (%)</b>",
-                    font=dict(family="Arial Black", size=16, color="#163A7B")),
+                title=dict(text="<b>PnL (%)</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
                 tickvals=yticks,
                 ticktext=yticktext,
-                tickmode="array", 
+                tickmode="array",
                 showgrid=False,
-                gridwidth=1,
-                gridcolor='lightgray',
                 range=[yticks[0], yticks[-1]],
-                fixedrange=True, 
+                fixedrange=True,
             )
         )
 
-
-        # fix_axis_minus(fig, yticks[0], yticks[-1])
-
         fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
-
         return fig
+
     except Exception as e:
-        import logging
         logging.error(f"Error plotting PnL with regime ribbons: {e}", exc_info=True)
         return None
+
+
+
+# def plot_group_contributions_with_regime(contribs_by_group):
+#     """Plot group-level contributions to the FSI with regime highlighting."""
+#     try:
+#         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
+#         fsi = contribs_by_group['FSI']
+#         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
+#         # regimes = regime_from_smooth_weight(smooth_weight)
+#         regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+
+#         fig = make_subplots(
+#             rows=2, cols=1,
+#             shared_xaxes=True,
+#             vertical_spacing=0.02,
+#             row_heights=[0.75, 0.25],
+#             # subplot_titles=["FSI Group-Level Contributions", "Transition Proximity"]
+#         )
+
+#         # === Top Plot: Stacked Area Contributions ===
+#         for col in [c for c in contribs_by_group.columns if c != 'FSI']:
+#             fig.add_trace(go.Scatter(
+#                 x=contribs_by_group.index,
+#                 y=contribs_by_group[col],
+#                 stackgroup='one',
+#                 name=col,
+#                 legendgroup=col
+#             ), row=1, col=1)
+
+#         # Add FSI line
+#         fig.add_trace(go.Scattergl(
+#             x=contribs_by_group.index,
+#             y=fsi,
+#             name='FSI (Total)',
+#             mode='lines',
+#             line=dict(color='black', width=2, dash='dash'),
+#             legendgroup='FSI'
+#         ), row=1, col=1)
+
+#         # === Bottom Plot: Transition Proximity ===
+#         fig.add_trace(go.Scattergl(
+#             x=contribs_by_group.index,
+#             y=smooth_weight,
+#             name='Transition Proximity',
+#             mode='lines',
+#             line=dict(color='purple', width=2),
+#             legendgroup='Proximity'
+#         ), row=2, col=1)
+
+#         fsi_daily = reindex_to_daily(fsi)
+#         regimes_daily = reindex_to_daily(regimes)
+
+#         # Add regime ribbons to top chart only
+#         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, row=1, col=1)
+#         add_event_annotations(fig, market_events, event_heights=event_heights)
+
+#         # Vertical lines and year labels for every Jan 1st
+#         index_min = make_tz_naive(contribs_by_group.index.min())
+#         index_max = make_tz_naive(contribs_by_group.index.max())
+#         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(contribs_by_group.index.year))])
+#         year_starts = [make_tz_naive(d) for d in year_starts]
+#         year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
+
+
+
+#         for d in year_starts:
+#             fig.add_vline(
+#                 x=d,
+#                 line_width=1.2,
+#                 line_color="black",
+#                 opacity=0.5,
+#                 row="all"
+#             )
+#             fig.add_annotation(
+#                 x=d, y=0.28,
+#                 xref='x', yref='paper',
+#                 text=str(d.year),
+#                 showarrow=False,
+#                 font=dict(size=14, color='black', family='Arial'),
+#                 xanchor="center",
+#                 align="center",
+#                 opacity=0.6,
+#                 bgcolor="rgba(255,255,255,0.1)",
+#                 bordercolor="black",
+#                 borderwidth=0.5,
+#                 borderpad=2,
+#             )
+
+#         fig.update_layout(
+#             height=750,
+#             # title="FSI Group-Level Contributions with Transition Proximity",
+#             template="plotly_white",
+#             showlegend=True,
+#             font=dict(family="Arial", size=13),
+#             xaxis=dict(
+#                 title="Date",
+#                 rangeslider=dict(visible=False),
+#                 type='date',
+#                 showgrid=True,
+#                 gridwidth=1.2,
+#                 gridcolor='black',
+#                 tickformat='%Y'
+#             ),
+#             yaxis=dict(
+#                 title="Contribution to FSI",
+#                 showgrid=True,
+#                 gridwidth=1,
+#                 gridcolor='lightgray'
+#             ),
+#             yaxis2=dict(
+#                 # title="Transition Proximity",
+#                 range=[0, 1],
+#                 showgrid=True,
+#                 gridwidth=1,
+#                 gridcolor='lightgray'
+#             )
+#         )
+
+#         y_min = float(np.nanmin(fsi))
+#         y_max = float(np.nanmax(fsi))
+#         fix_axis_minus(fig, y_min, y_max)
+
+#         # Standardize all y-axis labels (avoid unicode minus)
+#         fig.update_yaxes(
+#             tickformat=".2f",
+#             separatethousands=False,
+#             exponentformat="none",
+#             showexponent="none",
+#             tickfont=dict(family="Arial", size=13)
+#         )
+
+#         return fig
+#     except Exception as e:
+#         logging.error(f"Error plotting group contributions: {e}", exc_info=True)
+#         return None
+
+# def plot_grouped_contributions(contribs_by_group):
+#     """Plot grouped contributions to the FSI."""
+#     try:
+#         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
+#         fsi = contribs_by_group['FSI']
+#         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
+#         # regimes = regime_from_smooth_weight(smooth_weight)
+#         regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+
+#         fig = make_subplots(
+#             rows=2, cols=1,
+#             shared_xaxes=True,
+#             vertical_spacing=0.02,
+#             row_heights=[0.75, 0.25],
+#             # subplot_titles=["FSI Group-Level Contributions", "Transition Proximity"]
+#         )
+
+#         # === Top Plot: Stacked Contributions ===
+#         for col in [c for c in contribs_by_group.columns if c != 'FSI']:
+#             fig.add_trace(go.Scatter(
+#                 x=contribs_by_group.index,
+#                 y=contribs_by_group[col],
+#                 stackgroup='one',
+#                 name=col,
+#                 legendgroup=col
+#             ), row=1, col=1)
+
+#         # FSI Line
+#         fig.add_trace(go.Scattergl(
+#             x=contribs_by_group.index,
+#             y=fsi,
+#             name='FSI (Total)',
+#             mode='lines',
+#             line=dict(color='black', width=2, dash='dash'),
+#             legendgroup='FSI'
+#         ), row=1, col=1)
+
+#         # === Bottom Plot: Transition Proximity ===
+#         fig.add_trace(go.Scattergl(
+#             x=contribs_by_group.index,
+#             y=smooth_weight,
+#             name='Transition Proximity',
+#             mode='lines',
+#             line=dict(color='purple', width=2),
+#             legendgroup='Proximity'
+#         ), row=2, col=1)
+
+#         fsi_daily = reindex_to_daily(fsi)
+#         regimes_daily = reindex_to_daily(regimes)
+
+#         # Add regime ribbons to top chart only
+#         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, row=1, col=1)
+#         add_event_annotations(fig, market_events, event_heights=event_heights)
+
+#         # Vertical lines for every Jan 1st (no event lines)
+#         index_min = make_tz_naive(contribs_by_group.index.min())
+#         index_max = make_tz_naive(contribs_by_group.index.max())
+#         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(contribs_by_group.index.year))])
+#         year_starts = [make_tz_naive(d) for d in year_starts]
+#         year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
+
+
+
+#         for d in year_starts:
+#             fig.add_vline(
+#                 x=d,
+#                 line_width=1.2,
+#                 line_color="black",
+#                 opacity=0.5,
+#                 row="all"
+#             )
+#             fig.add_annotation(
+#                 x=d, y=0.28,
+#                 xref='x', yref='paper',
+#                 text=str(d.year),
+#                 showarrow=False,
+#                 font=dict(size=14, color='black', family='Arial'),
+#                 xanchor="center",
+#                 align="center",
+#                 opacity=0.6,
+#                 bgcolor="rgba(255,255,255,0.1)",
+#                 bordercolor="black",
+#                 borderwidth=0.5,
+#                 borderpad=2,
+#             )
+
+#         fig.update_layout(
+#             height=750,
+#             # title="FSI Group-Level Contributions with Transition Proximity",
+#             template="plotly_white",
+#             showlegend=True,
+#             xaxis=dict(
+#                 title="Date",
+#                 rangeslider=dict(visible=False),
+#                 type='date',
+#                 showgrid=True,
+#                 gridwidth=1.2,
+#                 gridcolor='black',
+#                 tickformat='%Y'
+#             ),
+#             yaxis=dict(
+#                 title="Contribution to FSI",
+#                 showgrid=False,
+#                 gridwidth=1,
+#                 gridcolor='lightgray'
+#             ),
+#             yaxis2=dict(
+#                 # title="Transition Proximity",
+#                 range=[0, 1],
+#                 showgrid=True,
+#                 gridwidth=1,
+#                 gridcolor='lightgray'
+#             )
+#         )
+
+#         y_min = float(np.nanmin(fsi))
+#         y_max = float(np.nanmax(fsi))
+#         fix_axis_minus(fig, y_min, y_max)
+
+#         # Standardize all y-axis labels (avoid unicode minus)
+#         fig.update_yaxes(
+#             tickformat=".2f",
+#             separatethousands=False,
+#             exponentformat="none",
+#             showexponent="none",
+#             tickfont=dict(family="Arial", size=13)
+#         )
+
+#         return fig
+#     except Exception as e:
+#         logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
+#         return None
+
+
+# def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
+#     """Plot PnL scatter with *identical* regime background as FSI group chart, with bold blue axes, percent Y-ticks."""
+#     import numpy as np
+
+#     try:
+#         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
+#         fsi_series.index = pd.to_datetime(fsi_series.index)
+        
+#         # --- Filtering here ---
+#         start_chart_date = pd.to_datetime("2019-01-01")
+#         if 'Date' in pnl_df.columns:
+#             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
+#         pnl_df.index = pd.to_datetime(pnl_df.index)
+        
+#         # Filter ALL data to start from 2019-01-01
+#         pnl_df = pnl_df.loc[pnl_df.index >= start_chart_date]
+#         contribs_by_group = contribs_by_group.loc[contribs_by_group.index >= start_chart_date]
+#         fsi_series = fsi_series.loc[fsi_series.index >= start_chart_date]
+
+#         fsi = contribs_by_group['FSI']
+#         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
+#         # regimes = regime_from_smooth_weight(smooth_weight)
+#         regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+
+#         # Align PnL
+#         if 'Date' in pnl_df.columns:
+#             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
+#         pnl_df.index = pd.to_datetime(pnl_df.index)
+#         pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
+
+#         # --- Y-axis: 3% spacing, percent, bold, dark blue ---
+#         y_min = float(np.nanmin(pnl_series))
+#         y_max = float(np.nanmax(pnl_series))
+#         max_abs = max(abs(y_min), abs(y_max), 0.06)
+#         max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100
+#         yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
+#         yticktext = [f"{int(v*100)}%" for v in yticks]
+
+#         fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
+
+#         # PnL Scatter
+#         fig.add_trace(
+#             go.Scattergl(
+#                 x=pnl_series.index,
+#                 y=pnl_series.values,
+#                 mode='markers',
+#                 marker=dict(size=5, color='Darkblue'),
+#                 name='PnL'
+#             ),
+#             row=1, col=1
+#         )
+
+#         fsi_daily = reindex_to_daily(fsi)
+#         regimes_daily = reindex_to_daily(regimes)
+
+#         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, row=1, col=1)
+#         # add_event_annotations(fig, market_events, event_heights=event_heights_pnl)
+
+#         # Target VaR lines
+#         custom_color_dark = '#3096B9'
+#         fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
+#         fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
+
+#         # Jan 1st vertical lines
+#         index_min = make_tz_naive(pnl_series.index.min())
+#         index_max = make_tz_naive(pnl_series.index.max())
+#         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
+#         year_starts = [make_tz_naive(d) for d in year_starts]
+#         year_starts = [d for d in year_starts if d >= index_min and d <= index_max]
+
+
+#         for d in year_starts:
+#             fig.add_vline(
+#                 x=d,
+#                 line_width=1.2,
+#                 line_color="black",
+#                 opacity=0.5,
+#                 row="all"
+#             )
+
+#         # Annotations
+#         fig.add_annotation(
+#             x=pd.to_datetime("2018-08-31"),
+#             y=0,
+#             xref='x', yref='y',
+#             text="PRE-<br>AQUAE",
+#             showarrow=False,
+#             font=dict(size=14, color='red'),
+#             align="center",
+#             bgcolor="rgba(255, 255, 255, 0.5)",
+#             bordercolor="red",
+#             borderwidth=1,
+#             borderpad=4,
+#         )
+
+#         fig.add_annotation(
+#             x=pd.to_datetime("2023-01-01"),
+#             y=-0.15,   # or try y=-0.1, adjust if needed
+#             xref='x',
+#             yref='paper',    # position relative to the chart (0 = bottom, 1 = top)
+#             text="<b>New Risk<br>Controls</b>",
+#             showarrow=False,
+#             font=dict(size=12, color="black"),
+#             align="center",
+#             bordercolor="red",
+#             borderwidth=1,
+#             borderpad=4,
+#             bgcolor="rgba(255, 255, 255, 0.5)"
+#         )
+
+#         neptune_end = pnl_series.index.max()
+
+#         # === Horizontal double-arrow "PORTFOLIO" at y = -0.13 ===
+#         fig.add_shape(
+#             type="line",
+#             x0="2019-01-01", x1="2024-02-01",
+#             y0=-0.13, y1=-0.13,
+#             line=dict(color="darkblue", width=3),
+#             xref='x', yref='y',
+#             layer="above"
+#         )
+#         fig.add_annotation(
+#             x="2019-01-01", y=-0.13, xref='x', yref='y',
+#             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#             arrowcolor="darkblue", ax=30, ay=0,
+#             opacity=1
+#         )
+#         fig.add_annotation(
+#             x="2024-02-01", y=-0.13, xref='x', yref='y',
+#             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#             arrowcolor="darkblue", ax=-30, ay=0,
+#             opacity=1
+#         )
+#         fig.add_annotation(
+#             x="2021-07-01",  # Midpoint
+#             y=-0.155,  # Just below the arrow
+#             xref='x', yref='y',
+#             text="<b>PORTFOLIO</b>",
+#             showarrow=False,
+#             font=dict(family="Arial Black", size=16, color="darkblue"),
+#             align="center"
+#         )
+
+#         # === Horizontal double-arrow "NEPTUNE" at y = -0.16 ===
+#         fig.add_shape(
+#             type="line",
+#             x0="2024-02-01", x1=neptune_end,
+#             y0=-0.13, y1=-0.13,
+#             line=dict(color="#3096B9", width=3),
+#             xref='x', yref='y',
+#             layer="above"
+#         )
+#         fig.add_annotation(
+#             x="2024-02-01", y=-0.13, xref='x', yref='y',
+#             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#             arrowcolor="#3096B9", ax=30, ay=0,
+#             opacity=1
+#         )
+#         fig.add_annotation(
+#             x=neptune_end, y=-0.13, xref='x', yref='y',
+#             showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#             arrowcolor="#3096B9", ax=-30, ay=0,
+#             opacity=1
+#         )
+#         fig.add_annotation(
+#             x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
+#             y=-0.155,  # Just below the arrow
+#             xref='x', yref='y',
+#             text="<b>NEPTUNE</b>",
+#             showarrow=False,
+#             font=dict(family="Arial Black", size=16, color="#3096B9"),
+#             align="center"
+#         )
+
+#         # --- X-axis: Bold, dark blue, Jan-2021 style, adaptive zoom ---
+#         fig.update_layout(
+#             height=600,
+#             template="plotly_white",
+#             showlegend=True,
+#             xaxis=dict(
+#                 title=dict(
+#                     text="<b>Date</b>",
+#                     font=dict(family="Arial Black", size=16, color="#163A7B")
+#                 ),
+#                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+#                 rangeslider=dict(visible=False),
+#                 type='date',
+#                 showgrid=True,
+#                 gridwidth=1.2,
+#                 gridcolor='black',
+#                 tickformatstops=[
+#                     dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),            # Up to 1 year: show only year
+#                     dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),  # Between 1 month and 1 year: month-year
+#                     # (optional) dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 28], value="%d %b %Y"),       # For super zoom
+#                 ]
+#             ),
+#             yaxis=dict(
+#                 title=dict(
+#                     text="<b>PnL (%)</b>",
+#                     font=dict(family="Arial Black", size=16, color="#163A7B")),
+#                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+#                 tickvals=yticks,
+#                 ticktext=yticktext,
+#                 tickmode="array", 
+#                 showgrid=False,
+#                 gridwidth=1,
+#                 gridcolor='lightgray',
+#                 range=[yticks[0], yticks[-1]],
+#                 fixedrange=True, 
+#             )
+#         )
+
+
+#         # fix_axis_minus(fig, yticks[0], yticks[-1])
+
+#         fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
+
+#         return fig
+#     except Exception as e:
+#         import logging
+#         logging.error(f"Error plotting PnL with regime ribbons: {e}", exc_info=True)
+#         return None
 
 
 def save_fsi_charts_to_html(fig1, fig2, fig3=None, filename="fsi_combined_report.html"):

@@ -606,11 +606,22 @@ def run_full_pipeline(n_clicks):
     latest_omega = omega_history.iloc[-1]
     variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
     group_map = {
-        'Volatility': ['VIX_dev_250', 'MOVE_dev_250', 'OVX_dev_250', 'VXV_dev_250', 'VIX_VXV_spread_dev_250'],
-        'Rates': ['10Y_rate_250', '2Y_rate_250', '10Y_2Y_slope_dev_250', '10Y_3M_slope_dev_250', 'USDO_rate_dev_250'],
-        'Funding': ['USD_stress_250', '3M_TBill_stress_250', 'Fed_RRP_stress_250', 'FRED_RRP_stress_250'],
-        'Credit': ['IG_OAS_dev_250', 'HY_OAS_dev_250', 'HY_IG_spread_250'],
-        'Safe_Haven': ['Gold_dev_250']
+        "Volatility": [
+            "VIX_dev_250", "MOVE_dev_250", "OVX_dev_250",
+            "VIX3M_dev_250", "VIX_VIX3M_spread_dev_250"  # if engineered
+        ],
+        "Rates": [
+            "2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"
+        ],
+        "Funding": [
+            "3M_TBill_stress_250", "EFFR_stress_250", "EFFR_VOLUME_250" # include USD only if DXY fetched
+        ],
+        "Credit": [
+            "IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"
+        ],
+        "FX/Safe_Haven": [
+            "Gold_dev_250", "USDJPY_dev_250", "USD_stress_250" 
+        ],
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
     regimes = classify_risk_regime_hybrid(fsi_series)
@@ -651,7 +662,6 @@ def run_full_pipeline(n_clicks):
         Input('fsi-yaxis-ticks', 'value')
     ]
 )
-
 
 def update_all_from_store(data, start_date, end_date, ytick_opts):
     if data is None:
@@ -718,11 +728,6 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
             height=210
         )
         return fig
-
-    # prob_logit, _, _ = predict_regime_probability(df, model_type='logit', lookahead=20)
-    # prob_xgb, _, _ = predict_regime_probability(df, model_type='xgboost', lookahead=20)
-    # fig_prob_logit = make_prob_gauge(prob_logit, "Logit P(Red)")
-    # fig_prob_xgb = make_prob_gauge(prob_xgb, "XGBoost P(Red)")
 
     prob_logit, _, _, _, score_logit = predict_regime_probability(df, model_type='logit', lookahead=20)
     prob_xgb, _, _, _, score_xgb = predict_regime_probability(df, model_type='xgboost', lookahead=20)
