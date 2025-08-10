@@ -669,34 +669,40 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
         raise dash.exceptions.PreventUpdate
 
     variable_contribs = pd.read_json(io.StringIO(data["variable_contribs"]), orient="split")
-    grouped_contribs = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
-    df = pd.read_json(io.StringIO(data["df"]), orient="split")
+    grouped_contribs  = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
+    df_all            = pd.read_json(io.StringIO(data["df"]), orient="split")  # contains 'Regime'
 
     # --- FILTER by selected date ---
     if start_date:
-        variable_contribs = variable_contribs[variable_contribs.index >= pd.to_datetime(start_date)]
-        grouped_contribs = grouped_contribs[grouped_contribs.index >= pd.to_datetime(start_date)]
-        df = df[df.index >= pd.to_datetime(start_date)]
+        sd = pd.to_datetime(start_date)
+        variable_contribs = variable_contribs[variable_contribs.index >= sd]
+        grouped_contribs  = grouped_contribs[grouped_contribs.index  >= sd]
+        df_all            = df_all[df_all.index >= sd]
     if end_date:
-        variable_contribs = variable_contribs[variable_contribs.index <= pd.to_datetime(end_date)]
-        grouped_contribs = grouped_contribs[grouped_contribs.index <= pd.to_datetime(end_date)]
-        df = df[df.index <= pd.to_datetime(end_date)]
+        ed = pd.to_datetime(end_date)
+        variable_contribs = variable_contribs[variable_contribs.index <= ed]
+        grouped_contribs  = grouped_contribs[grouped_contribs.index  <= ed]
+        df_all            = df_all[df_all.index <= ed]
 
-    fig1 = plot_group_contributions_with_regime(variable_contribs)
-    fig2 = plot_grouped_contributions(grouped_contribs)
+    # --- USE PRECOMPUTED REGIMES (STATIC) ---
+    regimes_slice = df_all["Regime"].astype(str)
+
+    # Pass regimes to plotting (so ribbons don’t change)
+    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_slice)
+    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_slice)
 
     # --- Y-Axis Tick Visibility ---
     show_ticks = 'show' in (ytick_opts or [])
     fig1.update_yaxes(showticklabels=show_ticks)
     fig2.update_yaxes(showticklabels=show_ticks)
 
-    curr_regime = get_current_regime(df)
+    curr_regime = get_current_regime(df_all)
     curr_regime_html = regime_color_text(curr_regime)
 
     # --- Improved: Map HMM state to regime color ---
     hmm_state, _, hmm_states_series = run_hmm(
-        df, n_states=4,
-        columns=[c for c in df.columns if 'FSI' in c or 'dev' in c or 'stress' in c or 'OAS' in c]
+        df_all, n_states=4,
+        columns=[c for c in df_all.columns if 'FSI' in c or 'dev' in c or 'stress' in c or 'OAS' in c]
     )
 
     def hmm_state_to_regime(state):
@@ -730,12 +736,12 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
         )
         return fig
 
-    prob_logit, _, _, _, score_logit = predict_regime_probability(df, model_type='logit', lookahead=20)
-    prob_xgb, _, _, _, score_xgb = predict_regime_probability(df, model_type='xgboost', lookahead=20)
+    prob_logit, _, _, _, score_logit = predict_regime_probability(df_all, model_type='logit', lookahead=20)
+    prob_xgb, _, _, _, score_xgb = predict_regime_probability(df_all, model_type='xgboost', lookahead=20)
     fig_prob_logit = make_prob_gauge(prob_logit, f"Logit P(Red) (AUC: {score_logit:.2f})")
     fig_prob_xgb = make_prob_gauge(prob_xgb, f"XGBoost P(Red) (AUC: {score_xgb:.2f})")
 
-    regime_series = df['Regime'].astype(str).fillna("NA").reset_index(drop=True)
+    regime_series = df_all['Regime'].astype(str).fillna("NA").reset_index(drop=True)
 
     valid_idx = regime_series != "NA"
     regime_series = regime_series[valid_idx]
@@ -780,7 +786,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
                 title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b><br>",
                 xaxis_title="To Regime",
                 yaxis_title="From Regime",
-                margin=dict(l=45, r=45, t=45, b=40),
+                margin=dict(l=55, r=55, t=45, b=40),
                 font=dict(size=11),
                 plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
             )
@@ -841,8 +847,12 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
 def update_pnl(upload_contents, upload_filename, fsi_data):
     if fsi_data is None:
         return go.Figure(), "Please run analysis first.", ""
+
     variable_contribs = pd.read_json(io.StringIO(fsi_data["variable_contribs"]), orient="split")
-    fsi_series = pd.read_json(io.StringIO(fsi_data["fsi_series"]), typ="series", orient="split")
+    fsi_series        = pd.read_json(io.StringIO(fsi_data["fsi_series"]), typ="series", orient="split")
+    df_all            = pd.read_json(io.StringIO(fsi_data["df"]), orient="split")  # <- has Regime
+    regimes_full      = df_all["Regime"].astype(str)
+
     msg = ""
     pnl_df = None
     preview_table = None
@@ -878,7 +888,7 @@ def update_pnl(upload_contents, upload_filename, fsi_data):
             pnl_df = None
 
     if pnl_df is not None:
-        fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, variable_contribs, fsi_series)
+        fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, variable_contribs, fsi_series, regimes=regimes_full)
     else:
         fig_pnl = go.Figure()
         fig_pnl.update_layout(title="PnL Chart (Upload file to see data)")
@@ -995,7 +1005,6 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     fig_range = plot_distribution_plotly(pnl_series, period_title, pnl_range=(-0.03, 0.03))
     fig_full = plot_distribution_plotly(pnl_series, period_title)
     return fig_range, fig_full
-
 
 
 if __name__ == "__main__":

@@ -110,9 +110,14 @@ def fix_axis_minus(fig, y_min, y_max, n_ticks=5):
 def make_tz_naive(dt):
     return dt.tz_localize(None) if getattr(dt, "tzinfo", None) is not None else dt
 
+def _prepare_ribbons(fsi, regimes):
+    # align + daily
+    regimes = regimes.reindex(fsi.index).ffill().bfill()
+    fsi_daily = reindex_to_daily(fsi)
+    regimes_daily = reindex_to_daily(regimes)
+    return fsi_daily, regimes_daily
 
-
-def plot_group_contributions_with_regime(contribs_by_group):
+def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
     """Plot variable-level contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
@@ -142,8 +147,11 @@ def plot_group_contributions_with_regime(contribs_by_group):
         ))
 
         # Regime ribbons + events
-        fsi_daily = reindex_to_daily(fsi)
-        regimes_daily = reindex_to_daily(regimes)
+        # fsi_daily = reindex_to_daily(fsi)
+        # regimes_daily = reindex_to_daily(regimes)
+
+        fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
+
         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
@@ -196,12 +204,15 @@ def plot_group_contributions_with_regime(contribs_by_group):
         return None
 
 
-def plot_grouped_contributions(contribs_by_group):
+def plot_grouped_contributions(contribs_by_group, regimes=None):
     """Plot grouped contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+
+        if regimes is None:
+            from utils import classify_adaptive_regime_hybrid_fallback
+            regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         fig = go.Figure()
 
@@ -226,8 +237,11 @@ def plot_grouped_contributions(contribs_by_group):
         ))
 
         # Regime ribbons + events
-        fsi_daily = reindex_to_daily(fsi)
-        regimes_daily = reindex_to_daily(regimes)
+        # fsi_daily = reindex_to_daily(fsi)
+        # regimes_daily = reindex_to_daily(regimes)
+
+        fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
+
         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
@@ -279,7 +293,7 @@ def plot_grouped_contributions(contribs_by_group):
         return None
 
 
-def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
+def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=None):
     """PnL scatter with regime ribbons from FSI classification (no proximity trace)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
@@ -307,7 +321,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
 
         # Y-axis grid at 3% spacing
         y_min = float(np.nanmin(pnl_series))
-        y_max = float(np.nanmax(pnl_series))
+        y_max = float(np.nanmax(pnl_series))   
         max_abs = max(abs(y_min), abs(y_max), 0.06)
         max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100
         yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
@@ -325,8 +339,11 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series):
         ))
 
         # Regime ribbons (match FSI chart)
-        fsi_daily = reindex_to_daily(fsi)
-        regimes_daily = reindex_to_daily(regimes)
+        # fsi_daily = reindex_to_daily(fsi)
+        # regimes_daily = reindex_to_daily(regimes)
+
+        fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
+
         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
 
         # VaR guard rails
