@@ -74,8 +74,8 @@ def parallel_fsi_windows(roll, arr, n_iter):
                     X_t[i, j] = 0.0
         omega = fast_als(X_t, n_iter)
         omega_history[t] = omega
-        f_t = arr[t + window - 1]
-        fsi_series[t] = np.dot(f_t, omega)
+        f_t_std = X_t[-1, :]
+        fsi_series[t] = np.dot(f_t_std, omega)
     return omega_history, fsi_series
 
 def estimate_fsi_recursive_rolling_with_stability(
@@ -89,7 +89,7 @@ def estimate_fsi_recursive_rolling_with_stability(
     # Batched rolling windows
     roll = rolling_window(arr, window_size)  # (num_windows, window_size, N)
     roll = np.ascontiguousarray(roll)
-    
+
     omega_history, fsi_series = parallel_fsi_windows(roll, arr, n_iter)
 
     # Cosine similarity (serial, negligible cost)
@@ -125,7 +125,7 @@ def compute_variable_contributions(df, omega):
     try:
         df_std = (df - df.mean()) / df.std()
         omega = np.array(omega)
-        contribs = df_std.multiply(omega / np.dot(omega, omega), axis=1)
+        contribs = df_std.multiply(omega, axis=1)
         contribs['FSI'] = contribs.sum(axis=1)
         return contribs
     except Exception as e:

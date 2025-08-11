@@ -167,7 +167,7 @@ def ewma_volatility(series, lambda_=0.94):
     squared_returns = returns ** 2
     span = (2 / (1 - lambda_)) - 1
     ewma_vol = squared_returns.ewm(span=span, min_periods=30).mean().apply(np.sqrt)
-    return ewma_vol.reindex(series.index).fillna(method='bfill')
+    return ewma_vol.reindex(series.index).ffill()
 
 def volatility_spike_flags(series, vol_window=250, spike_quantile=0.9, lambda_=0.94):
     ewma_vol = ewma_volatility(series, lambda_)
