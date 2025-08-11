@@ -79,10 +79,10 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
     df = pd.DataFrame({'FSI': fsi_series, 'Regime': regimes})
     df['RegimeShift'] = (df['Regime'] != df['Regime'].shift()).cumsum()
     colors = {
-        'Green': 'rgba(0, 200, 0, 0.3)',
-        'Yellow': 'rgba(255, 255, 0, 0.3)',
-        'Amber': 'rgba(255, 165, 0, 0.3)',
-        'Red': 'rgba(255, 0, 0, 0.3)'
+        'Green': 'rgba(39,174,96,0.30)',   # #27ae60
+        'Yellow': 'rgba(247,202,24,0.30)', # #f7ca18
+        'Amber': 'rgba(243,156,18,0.30)',  # #f39c12
+        'Red': 'rgba(231,76,60,0.30)'      # #e74c3c
     }
     for _, segment in df.groupby('RegimeShift'):
         regime = segment['Regime'].iloc[0]
@@ -122,7 +122,8 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        if regimes is None:
+            regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         fig = go.Figure()
 
@@ -209,6 +210,7 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
+        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         if regimes is None:
             from utils import classify_adaptive_regime_hybrid_fallback
