@@ -127,7 +127,7 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
 
-        regimes = classify_risk_regime_hybrid(fsi)
+        # regimes = classify_risk_regime_hybrid(fsi)
 
         # if regimes is None:
         #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
@@ -222,7 +222,7 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
 
-        regimes = classify_risk_regime_hybrid(fsi)
+        # regimes = classify_risk_regime_hybrid(fsi)
 
         # if regimes is None:
         #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
@@ -329,7 +329,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         # FSI & regimes
         fsi = contribs_by_group['FSI']
 
-        regimes = classify_risk_regime_hybrid(fsi)
+        # regimes = classify_risk_regime_hybrid(fsi)
 
         # if regimes is None:
         #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
