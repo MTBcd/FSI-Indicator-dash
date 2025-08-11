@@ -13,3 +13,4 @@ env/
 ENV/
 .venv/
 fsivenv/
+cache-directory/
