@@ -560,7 +560,6 @@ app.layout = html.Div([
 )
 def run_full_pipeline(n_clicks):
     import time
-    from utils import classify_risk_regime_hybrid
 
     cache_key = "fsi_analysis_latest"
     msg = "⏳ Analysis running, please wait..."
@@ -625,7 +624,8 @@ def run_full_pipeline(n_clicks):
         ],
     }
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
-    regimes = classify_adaptive_regime_hybrid_fallback(fsi_series, quantile_window=1260)
+    # regimes = classify_adaptive_regime_hybrid_fallback(fsi_series, quantile_window=1260)
+    regimes = classify_risk_regime_hybrid(fsi_series)
     df_aligned = df.loc[fsi_series.index].copy()
     df_aligned["Regime"] = regimes.values
 
