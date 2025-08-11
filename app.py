@@ -626,9 +626,10 @@ def run_full_pipeline(n_clicks):
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
     # regimes = classify_adaptive_regime_hybrid_fallback(fsi_series, quantile_window=1260)
     # regimes = classify_risk_regime_hybrid(fsi_series)
-    regimes = classify_risk_regime_hybrid(fsi_series)
+    regimes_full = classify_risk_regime_hybrid(fsi_series)
+
     df_aligned = df.loc[fsi_series.index].copy()
-    df_aligned["Regime"] = regimes.values
+    df_aligned["Regime"] = regimes_full.astype(str)
 
     print("First 10 regimes:", df_aligned["Regime"].head(10).tolist())
     print("Regime counts:", df_aligned["Regime"].value_counts())
@@ -677,23 +678,23 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
     regimes_full = df_all["Regime"].astype(str)
 
     # --- FILTER by selected date ---
+    df_filtered = df_all.copy()
     if start_date:
         sd = pd.to_datetime(start_date)
-        variable_contribs = variable_contribs[variable_contribs.index >= sd]
-        grouped_contribs  = grouped_contribs[grouped_contribs.index  >= sd]
-        df_filtered       = df_all[df_all.index >= sd]
-    else:
-        df_filtered = df_all
-
+        df_filtered = df_filtered[df_filtered.index >= sd]
     if end_date:
         ed = pd.to_datetime(end_date)
-        variable_contribs = variable_contribs[variable_contribs.index <= ed]
-        grouped_contribs  = grouped_contribs[grouped_contribs.index  <= ed]
-        df_filtered       = df_filtered[df_filtered.index <= ed]
+        df_filtered = df_filtered[df_filtered.index <= ed]
 
-    # Pass regimes to plotting (so ribbons don’t change)
-    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_full)
-    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_full)
+    # ✅ Make ALL inputs share the same index (this is the key change)
+    idx = df_filtered.index
+    variable_contribs = variable_contribs.reindex(idx)
+    grouped_contribs  = grouped_contribs.reindex(idx)
+    regimes_filtered  = regimes_full.reindex(idx)
+
+    # --- Pass regimes to plotting (so ribbons don’t change) ---
+    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered)
+    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_filtered)
 
     # --- Y-Axis Tick Visibility ---
     show_ticks = 'show' in (ytick_opts or [])
