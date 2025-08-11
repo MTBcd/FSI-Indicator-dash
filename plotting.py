@@ -111,7 +111,9 @@ def make_tz_naive(dt):
     return dt.tz_localize(None) if getattr(dt, "tzinfo", None) is not None else dt
 
 def _prepare_ribbons(fsi, regimes):
-    # align + daily
+    # Make sure regimes is a Series and align to fsi
+    if not isinstance(regimes, pd.Series):
+        regimes = pd.Series(regimes, index=fsi.index)
     regimes = regimes.reindex(fsi.index).ffill().bfill()
     fsi_daily = reindex_to_daily(fsi)
     regimes_daily = reindex_to_daily(regimes)
@@ -148,8 +150,6 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
         ))
 
         # Regime ribbons + events
-        # fsi_daily = reindex_to_daily(fsi)
-        # regimes_daily = reindex_to_daily(regimes)
 
         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
 
@@ -213,7 +213,6 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
         regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         if regimes is None:
-            from utils import classify_adaptive_regime_hybrid_fallback
             regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         fig = go.Figure()
@@ -239,8 +238,6 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
         ))
 
         # Regime ribbons + events
-        # fsi_daily = reindex_to_daily(fsi)
-        # regimes_daily = reindex_to_daily(regimes)
 
         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
 
