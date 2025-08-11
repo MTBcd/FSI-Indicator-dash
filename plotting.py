@@ -6,7 +6,7 @@ import numpy as np
 import chart_studio
 import chart_studio.plotly as py
 import logging
-from utils import smooth_transition_regime, regime_from_smooth_weight, classify_adaptive_regime, classify_adaptive_regime_hybrid_fallback
+from utils import smooth_transition_regime, regime_from_smooth_weight, classify_adaptive_regime, classify_adaptive_regime_hybrid_fallback, classify_risk_regime_hybrid
 import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde, skew, kurtosis
@@ -95,6 +95,8 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
             row=row, col=col
         )
 
+
+
 def reindex_to_daily(series_or_df, fill_method="ffill"):
     """Reindex a Series or DataFrame to full daily calendar (including weekends/holidays)."""
     daily_index = pd.date_range(series_or_df.index.min(), series_or_df.index.max(), freq="D")
@@ -124,6 +126,8 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
+
+        regimes = classify_risk_regime_hybrid(fsi)
 
         # if regimes is None:
         #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
@@ -217,6 +221,8 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
+
+        regimes = classify_risk_regime_hybrid(fsi)
 
         # if regimes is None:
         #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
@@ -322,6 +328,8 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
 
         # FSI & regimes
         fsi = contribs_by_group['FSI']
+
+        regimes = classify_risk_regime_hybrid(fsi)
 
         # if regimes is None:
         #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
