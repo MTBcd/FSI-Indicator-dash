@@ -124,8 +124,15 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
+
         if regimes is None:
             regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        else:
+            # Ensure we have a Series aligned to contribs_by_group
+            if not isinstance(regimes, pd.Series):
+                regimes = pd.Series(regimes, index=contribs_by_group.index)
+            else:
+                regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
 
         fig = go.Figure()
 
@@ -210,10 +217,15 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
-        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
 
         if regimes is None:
             regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        else:
+            # Ensure we have a Series aligned to contribs_by_group
+            if not isinstance(regimes, pd.Series):
+                regimes = pd.Series(regimes, index=contribs_by_group.index)
+            else:
+                regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
 
         fig = go.Figure()
 
@@ -310,7 +322,15 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
 
         # FSI & regimes
         fsi = contribs_by_group['FSI']
-        regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+
+        if regimes is None:
+            regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        else:
+            # Ensure we have a Series aligned to contribs_by_group
+            if not isinstance(regimes, pd.Series):
+                regimes = pd.Series(regimes, index=contribs_by_group.index)
+            else:
+                regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
 
         # Align PnL to FSI dates
         if 'Date' in pnl_df.columns:
