@@ -672,24 +672,27 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
     grouped_contribs  = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
     df_all            = pd.read_json(io.StringIO(data["df"]), orient="split")  # contains 'Regime'
 
+    # --- USE PRECOMPUTED REGIMES (STATIC) ---
+    regimes_full = df_all["Regime"].astype(str)
+
     # --- FILTER by selected date ---
     if start_date:
         sd = pd.to_datetime(start_date)
         variable_contribs = variable_contribs[variable_contribs.index >= sd]
         grouped_contribs  = grouped_contribs[grouped_contribs.index  >= sd]
-        df_all            = df_all[df_all.index >= sd]
+        df_filtered       = df_all[df_all.index >= sd]
+    else:
+        df_filtered = df_all
+
     if end_date:
         ed = pd.to_datetime(end_date)
         variable_contribs = variable_contribs[variable_contribs.index <= ed]
         grouped_contribs  = grouped_contribs[grouped_contribs.index  <= ed]
-        df_all            = df_all[df_all.index <= ed]
-
-    # --- USE PRECOMPUTED REGIMES (STATIC) ---
-    regimes_slice = df_all["Regime"].astype(str)
+        df_filtered       = df_filtered[df_filtered.index <= ed]
 
     # Pass regimes to plotting (so ribbons don’t change)
-    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_slice)
-    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_slice)
+    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_full)
+    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_full)
 
     # --- Y-Axis Tick Visibility ---
     show_ticks = 'show' in (ytick_opts or [])

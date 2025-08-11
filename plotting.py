@@ -79,10 +79,10 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
     df = pd.DataFrame({'FSI': fsi_series, 'Regime': regimes})
     df['RegimeShift'] = (df['Regime'] != df['Regime'].shift()).cumsum()
     colors = {
-        'Green': 'rgba(39,174,96,1.0)',   # #27ae60
-        'Yellow': 'rgba(247,202,24,1.0)', # #f7ca18
-        'Amber': 'rgba(243,156,18,1.0)',  # #f39c12
-        'Red': 'rgba(231,76,60,1.0)'      # #e74c3c
+        'Green': 'rgba(0, 200, 0, 0.3)',
+        'Yellow': 'rgba(255, 255, 0, 0.3)',
+        'Amber': 'rgba(255, 165, 0, 0.3)',
+        'Red': 'rgba(255, 0, 0, 0.3)'
     }
     for _, segment in df.groupby('RegimeShift'):
         regime = segment['Regime'].iloc[0]
