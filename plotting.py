@@ -79,10 +79,10 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
     df = pd.DataFrame({'FSI': fsi_series, 'Regime': regimes})
     df['RegimeShift'] = (df['Regime'] != df['Regime'].shift()).cumsum()
     colors = {
-        'Green': 'rgba(39,174,96,0.30)',   # #27ae60
-        'Yellow': 'rgba(247,202,24,0.30)', # #f7ca18
-        'Amber': 'rgba(243,156,18,0.30)',  # #f39c12
-        'Red': 'rgba(231,76,60,0.30)'      # #e74c3c
+        'Green': 'rgba(39,174,96,1.0)',   # #27ae60
+        'Yellow': 'rgba(247,202,24,1.0)', # #f7ca18
+        'Amber': 'rgba(243,156,18,1.0)',  # #f39c12
+        'Red': 'rgba(231,76,60,1.0)'      # #e74c3c
     }
     for _, segment in df.groupby('RegimeShift'):
         regime = segment['Regime'].iloc[0]
@@ -125,14 +125,14 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
 
-        if regimes is None:
-            regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
-        else:
-            # Ensure we have a Series aligned to contribs_by_group
-            if not isinstance(regimes, pd.Series):
-                regimes = pd.Series(regimes, index=contribs_by_group.index)
-            else:
-                regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
+        # if regimes is None:
+        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        # else:
+        #     # Ensure we have a Series aligned to contribs_by_group
+        #     if not isinstance(regimes, pd.Series):
+        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
+        #     else:
+        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
 
         fig = go.Figure()
 
@@ -218,14 +218,14 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
 
-        if regimes is None:
-            regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
-        else:
-            # Ensure we have a Series aligned to contribs_by_group
-            if not isinstance(regimes, pd.Series):
-                regimes = pd.Series(regimes, index=contribs_by_group.index)
-            else:
-                regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
+        # if regimes is None:
+        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        # else:
+        #     # Ensure we have a Series aligned to contribs_by_group
+        #     if not isinstance(regimes, pd.Series):
+        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
+        #     else:
+        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
 
         fig = go.Figure()
 
@@ -323,14 +323,14 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         # FSI & regimes
         fsi = contribs_by_group['FSI']
 
-        if regimes is None:
-            regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
-        else:
-            # Ensure we have a Series aligned to contribs_by_group
-            if not isinstance(regimes, pd.Series):
-                regimes = pd.Series(regimes, index=contribs_by_group.index)
-            else:
-                regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
+        # if regimes is None:
+        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        # else:
+        #     # Ensure we have a Series aligned to contribs_by_group
+        #     if not isinstance(regimes, pd.Series):
+        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
+        #     else:
+        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
 
         # Align PnL to FSI dates
         if 'Date' in pnl_df.columns:
@@ -358,8 +358,6 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         ))
 
         # Regime ribbons (match FSI chart)
-        # fsi_daily = reindex_to_daily(fsi)
-        # regimes_daily = reindex_to_daily(regimes)
 
         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
 
