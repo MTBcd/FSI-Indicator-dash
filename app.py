@@ -561,7 +561,8 @@ app.layout = html.Div([
 def run_full_pipeline(n_clicks):
     import time
 
-    cache_key = "fsi_analysis_latest"
+    # cache_key = "fsi_analysis_latest"
+    cache_key = "fsi_analysis_latest_hybrid_v1"
     msg = "⏳ Analysis running, please wait..."
     timestamp_label = ""
     result = cache.get(cache_key)
