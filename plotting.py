@@ -121,6 +121,15 @@ def _prepare_ribbons(fsi, regimes):
     regimes_daily = reindex_to_daily(regimes)
     return fsi_daily, regimes_daily
 
+def _pick_fsi_for_ribbons(contribs_by_group, fsi_for_ribbons):
+    if fsi_for_ribbons is not None:
+        # Align to the contribs index
+        s = pd.to_datetime(contribs_by_group.index)
+        f = pd.to_datetime(fsi_for_ribbons.index)
+        return fsi_for_ribbons.reindex(contribs_by_group.index).ffill().bfill()
+    else:
+        return contribs_by_group['FSI']
+
 def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
     """Plot variable-level contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:

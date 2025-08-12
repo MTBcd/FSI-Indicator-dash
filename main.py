@@ -257,13 +257,13 @@ def main():
 
     # === Regime Classification ===
     fsi = variable_contribs['FSI']
-    regimes = classify_adaptive_regime(fsi, quantile_window=1260) #classify_risk_regime_hybrid  2520 1260
+    regimes = classify_risk_regime_hybrid(fsi) #classify_risk_regime_hybrid  2520 1260
 
     print("Regime classification value counts:\n", regimes.value_counts())
 
     logging.info("Plotting results...")
-    fig1 = plot_group_contributions_with_regime(variable_contribs)
-    fig2 = plot_grouped_contributions(grouped_contribs)
+    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes)
+    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes)
 
     # Load PnL data and plot
     try:
