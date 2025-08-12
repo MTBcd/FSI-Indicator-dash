@@ -136,18 +136,17 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
 
-        # regimes = classify_risk_regime_hybrid(fsi)
-
-        # if regimes is None:
-        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
-        # else:
-        #     # Ensure we have a Series aligned to contribs_by_group
-        #     if not isinstance(regimes, pd.Series):
-        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
-        #     else:
-        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
-
         fig = go.Figure()
+
+        fig.update_xaxes(
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
+                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
+                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
+                dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
+                dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+            ]
+        )
 
         # Stacked area by variable (everything except FSI)
         for col in [c for c in contribs_by_group.columns if c != 'FSI']:
@@ -231,18 +230,17 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
         fsi = contribs_by_group['FSI']
 
-        # regimes = classify_risk_regime_hybrid(fsi)
-
-        # if regimes is None:
-        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
-        # else:
-        #     # Ensure we have a Series aligned to contribs_by_group
-        #     if not isinstance(regimes, pd.Series):
-        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
-        #     else:
-        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
-
         fig = go.Figure()
+
+        fig.update_xaxes(
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
+                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
+                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
+                dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
+                dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+            ]
+        )
 
         # Stacked area by group (everything except FSI)
         for col in [c for c in contribs_by_group.columns if c != 'FSI']:
@@ -338,17 +336,6 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         # FSI & regimes
         fsi = contribs_by_group['FSI']
 
-        # regimes = classify_risk_regime_hybrid(fsi)
-
-        # if regimes is None:
-        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
-        # else:
-        #     # Ensure we have a Series aligned to contribs_by_group
-        #     if not isinstance(regimes, pd.Series):
-        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
-        #     else:
-        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
-
         # Align PnL to FSI dates
         if 'Date' in pnl_df.columns:
             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
@@ -364,6 +351,16 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         yticktext = [f"{int(v*100)}%" for v in yticks]
 
         fig = go.Figure()
+
+        fig.update_xaxes(
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
+                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
+                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
+                dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
+                dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+            ]
+        )
 
         # PnL points
         fig.add_trace(go.Scattergl(
@@ -483,6 +480,19 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
 #         smooth_weight = smooth_transition_regime(fsi, gamma=2.5, c=0.5)
 #         # regimes = regime_from_smooth_weight(smooth_weight)
 #         regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+
+
+        # regimes = classify_risk_regime_hybrid(fsi)
+
+        # if regimes is None:
+        #     regimes = classify_adaptive_regime_hybrid_fallback(fsi, quantile_window=1260)
+        # else:
+        #     # Ensure we have a Series aligned to contribs_by_group
+        #     if not isinstance(regimes, pd.Series):
+        #         regimes = pd.Series(regimes, index=contribs_by_group.index)
+        #     else:
+        #         regimes = regimes.reindex(contribs_by_group.index).ffill().bfill()
+
 
 #         fig = make_subplots(
 #             rows=2, cols=1,

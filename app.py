@@ -565,11 +565,11 @@ def run_full_pipeline(n_clicks):
     cache_key = "fsi_analysis_latest_hybrid_v2"
     msg = "⏳ Analysis running, please wait..."
     timestamp_label = ""
-    # result = cache.get(cache_key)
-    # if result is not None:
-    #     msg = f"✅ Served from cache (last computed at {result.get('timestamp', 'unknown')})"
-    #     timestamp_label = f"Last update: {result.get('timestamp', 'unknown')}"
-    #     return result, msg, False, timestamp_label
+    result = cache.get(cache_key)
+    if result is not None:
+        msg = f"✅ Served from cache (last computed at {result.get('timestamp', 'unknown')})"
+        timestamp_label = f"Last update: {result.get('timestamp', 'unknown')}"
+        return result, msg, False, timestamp_label
 
     config = load_configuration()
     df = merge_data(config)
@@ -687,11 +687,13 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
         ed = pd.to_datetime(end_date)
         df_filtered = df_filtered[df_filtered.index <= ed]
 
-    # ✅ Make ALL inputs share the same index (this is the key change)
+    # Make all inputs share the same index (NO label leakage)
     idx = df_filtered.index
-    variable_contribs = variable_contribs.reindex(idx)
+    variable_contribs = variable_contribs.reindex(idx)  # numeric data can be NaN, it's fine
     grouped_contribs  = grouped_contribs.reindex(idx)
-    regimes_filtered  = df_filtered["Regime"].astype(str)
+
+    # Use the already-computed labels, just realigned; DO NOT fill across slice edges
+    regimes_filtered = regimes_full.reindex(idx)
 
     # --- Pass regimes to plotting (so ribbons don’t change) ---
     fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered)
