@@ -336,6 +336,16 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         # FSI & regimes
         fsi = contribs_by_group['FSI']
 
+        fig.update_xaxes(
+            tickformatstops=[
+                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
+                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
+                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
+                dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
+                dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+            ]
+        )
+
         # Align PnL to FSI dates
         if 'Date' in pnl_df.columns:
             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
