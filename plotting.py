@@ -317,6 +317,7 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
         return None
 
 
+
 def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=None):
     """PnL scatter with regime ribbons from FSI classification (no proximity trace)."""
     try:
@@ -333,44 +334,42 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         contribs_by_group = contribs_by_group.loc[contribs_by_group.index >= start_chart_date]
         fsi_series = fsi_series.loc[fsi_series.index >= start_chart_date]
 
-        # FSI & regimes
+        # FSI & regimes (take FSI from the passed contributions DF)
         fsi = contribs_by_group['FSI']
 
-        fig.update_xaxes(
-            tickformatstops=[
-                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
-                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
-                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
-                dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
-                dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
-            ]
-        )
-
-        # Align PnL to FSI dates
-        if 'Date' in pnl_df.columns:
-            pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
-        pnl_df.index = pd.to_datetime(pnl_df.index)
-        pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
-
-        # Y-axis grid at 3% spacing
-        y_min = float(np.nanmin(pnl_series))
-        y_max = float(np.nanmax(pnl_series))   
-        max_abs = max(abs(y_min), abs(y_max), 0.06)
-        max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100
-        yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
-        yticktext = [f"{int(v*100)}%" for v in yticks]
-
+        # --- NEW: create the figure FIRST (bug fix) ---
         fig = go.Figure()
 
         fig.update_xaxes(
             tickformatstops=[
-                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
-                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
-                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
-                dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
-                dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+                dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),
+                dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),
+                dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),
+                dict(dtickrange=["M1", "M12"], value="%b %Y"),
+                dict(dtickrange=["M12", None], value="%Y")
             ]
         )
+
+        # --- Align PnL strictly to overlapping dates with FSI ---
+        # (reindex-to-FSI can produce all-NaN if there’s no overlap)
+        common_idx = fsi_series.index.intersection(pnl_df.index)
+        if common_idx.empty:
+            # No overlap -> show a helpful empty chart
+            fig.update_layout(title="PnL dates do not overlap the FSI sample.")
+            return fig
+        pnl_series = pnl_df.loc[common_idx, 'P/L']
+
+        # Y-axis grid at 3% spacing (guard against empty/NaN)
+        if pnl_series.dropna().empty:
+            fig.update_layout(title="PnL series is empty after aligning to FSI dates.")
+            return fig
+
+        y_min = float(np.nanmin(pnl_series))
+        y_max = float(np.nanmax(pnl_series))
+        max_abs = max(abs(y_min), abs(y_max), 0.06)
+        max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100
+        yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
+        yticktext = [f"{int(v*100)}%" for v in yticks]
 
         # PnL points
         fig.add_trace(go.Scattergl(
@@ -382,9 +381,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         ))
 
         # Regime ribbons (match FSI chart)
-
         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
-
         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
 
         # VaR guard rails
@@ -400,7 +397,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         for d in year_starts:
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
-        # Optional annotations (kept as in your code)
+        # Optional annotations (as you had)
         fig.add_annotation(
             x=pd.to_datetime("2018-08-31"), y=0, xref='x', yref='y',
             text="PRE-<br>AQUAE", showarrow=False,
@@ -473,12 +470,182 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             )
         )
 
+        # Keep x-range consistent with FSI window
         fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
         return fig
 
     except Exception as e:
         logging.error(f"Error plotting PnL with regime ribbons: {e}", exc_info=True)
-        return None
+        # return an empty, informative figure instead of None
+        fig = go.Figure()
+        fig.update_layout(title="Could not render PnL chart. Check logs for details.")
+        return fig
+
+
+
+
+# def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=None):
+#     """PnL scatter with regime ribbons from FSI classification (no proximity trace)."""
+#     try:
+#         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
+#         fsi_series.index = pd.to_datetime(fsi_series.index)
+
+#         # Filter to a consistent start (optional)
+#         start_chart_date = pd.to_datetime("2019-01-01")
+#         if 'Date' in pnl_df.columns:
+#             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
+#         pnl_df.index = pd.to_datetime(pnl_df.index)
+
+#         pnl_df = pnl_df.loc[pnl_df.index >= start_chart_date]
+#         contribs_by_group = contribs_by_group.loc[contribs_by_group.index >= start_chart_date]
+#         fsi_series = fsi_series.loc[fsi_series.index >= start_chart_date]
+
+#         # FSI & regimes
+#         fsi = contribs_by_group['FSI']
+
+#         fig.update_xaxes(
+#             tickformatstops=[
+#                 dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
+#                 dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
+#                 dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
+#                 dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
+#                 dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+#             ]
+#         )
+
+#         # Align PnL to FSI dates
+#         if 'Date' in pnl_df.columns:
+#             pnl_df = pnl_df.set_index(pd.to_datetime(pnl_df['Date']))
+#         pnl_df.index = pd.to_datetime(pnl_df.index)
+#         pnl_series = pnl_df['P/L'].reindex(fsi_series.index)
+
+#         # Y-axis grid at 3% spacing
+#         y_min = float(np.nanmin(pnl_series))
+#         y_max = float(np.nanmax(pnl_series))   
+#         max_abs = max(abs(y_min), abs(y_max), 0.06)
+#         max_abs = np.ceil(max_abs * 100 / 3) * 3 / 100
+#         yticks = np.round(np.arange(-max_abs, max_abs + 0.001, 0.03), 2)
+#         yticktext = [f"{int(v*100)}%" for v in yticks]
+
+#         fig = go.Figure()
+
+#         fig.update_xaxes(
+#             tickformatstops=[
+#                 dict(dtickrange=[None, 86400000.0], value="%Y-%m-%d"),  # < 1 day
+#                 dict(dtickrange=[86400000.0, 604800000.0], value="%Y-%m-%d"),  # < 1 week
+#                 dict(dtickrange=[604800000.0, "M1"], value="%Y-%m-%d"),  # < 1 month
+#                 dict(dtickrange=["M1", "M12"], value="%b %Y"),           # < 1 year
+#                 dict(dtickrange=["M12", None], value="%Y")               # >= 1 year
+#             ]
+#         )
+
+#         # PnL points
+#         fig.add_trace(go.Scattergl(
+#             x=pnl_series.index,
+#             y=pnl_series.values,
+#             mode='markers',
+#             marker=dict(size=5, color='Darkblue'),
+#             name='PnL'
+#         ))
+
+#         # Regime ribbons (match FSI chart)
+
+#         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
+
+#         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+
+#         # VaR guard rails
+#         custom_color_dark = '#3096B9'
+#         fig.add_hline(y=0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
+#         fig.add_hline(y=-0.03, line_color=custom_color_dark, line_dash="dash", layer="below")
+
+#         # Year lines
+#         index_min = make_tz_naive(pnl_series.index.min())
+#         index_max = make_tz_naive(pnl_series.index.max())
+#         year_starts = pd.to_datetime([f"{year}-01-01" for year in sorted(set(pnl_series.index.year))])
+#         year_starts = [d for d in map(make_tz_naive, year_starts) if index_min <= d <= index_max]
+#         for d in year_starts:
+#             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
+
+#         # Optional annotations (kept as in your code)
+#         fig.add_annotation(
+#             x=pd.to_datetime("2018-08-31"), y=0, xref='x', yref='y',
+#             text="PRE-<br>AQUAE", showarrow=False,
+#             font=dict(size=14, color='red'), align="center",
+#             bgcolor="rgba(255, 255, 255, 0.5)", bordercolor="red", borderwidth=1, borderpad=4,
+#         )
+#         fig.add_annotation(
+#             x=pd.to_datetime("2023-01-01"), y=-0.15, xref='x', yref='paper',
+#             text="<b>New Risk<br>Controls</b>", showarrow=False,
+#             font=dict(size=12, color="black"), align="center",
+#             bordercolor="red", borderwidth=1, borderpad=4, bgcolor="rgba(255, 255, 255, 0.5)"
+#         )
+
+#         neptune_end = pnl_series.index.max()
+#         # PORTFOLIO arrow
+#         fig.add_shape(type="line", x0="2019-01-01", x1="2024-02-01", y0=-0.13, y1=-0.13,
+#                       line=dict(color="darkblue", width=3), xref='x', yref='y', layer="above")
+#         fig.add_annotation(x="2019-01-01", y=-0.13, xref='x', yref='y',
+#                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#                            arrowcolor="darkblue", ax=30, ay=0)
+#         fig.add_annotation(x="2024-02-01", y=-0.13, xref='x', yref='y',
+#                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#                            arrowcolor="darkblue", ax=-30, ay=0)
+#         fig.add_annotation(x="2021-07-01", y=-0.155, xref='x', yref='y',
+#                            text="<b>PORTFOLIO</b>", showarrow=False,
+#                            font=dict(family="Arial Black", size=16, color="darkblue"), align="center")
+
+#         # NEPTUNE arrow
+#         fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.13, y1=-0.13,
+#                       line=dict(color="#3096B9", width=3), xref='x', yref='y', layer="above")
+#         fig.add_annotation(x="2024-02-01", y=-0.13, xref='x', yref='y',
+#                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#                            arrowcolor="#3096B9", ax=30, ay=0)
+#         fig.add_annotation(x=neptune_end, y=-0.13, xref='x', yref='y',
+#                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+#                            arrowcolor="#3096B9", ax=-30, ay=0)
+#         fig.add_annotation(
+#             x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
+#             y=-0.155, xref='x', yref='y',
+#             text="<b>NEPTUNE</b>", showarrow=False,
+#             font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
+#         )
+
+#         fig.update_layout(
+#             height=600,
+#             template="plotly_white",
+#             showlegend=True,
+#             xaxis=dict(
+#                 title=dict(text="<b>Date</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
+#                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+#                 rangeslider=dict(visible=False),
+#                 type='date',
+#                 showgrid=True,
+#                 gridwidth=1.2,
+#                 gridcolor='black',
+#                 tickformatstops=[
+#                     dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),
+#                     dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),
+#                 ]
+#             ),
+#             yaxis=dict(
+#                 title=dict(text="<b>PnL (%)</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
+#                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+#                 tickvals=yticks,
+#                 ticktext=yticktext,
+#                 tickmode="array",
+#                 showgrid=False,
+#                 range=[yticks[0], yticks[-1]],
+#                 fixedrange=True,
+#             )
+#         )
+
+#         fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
+#         return fig
+
+#     except Exception as e:
+#         logging.error(f"Error plotting PnL with regime ribbons: {e}", exc_info=True)
+#         return None
 
 
 

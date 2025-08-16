@@ -863,42 +863,72 @@ def update_pnl(upload_contents, upload_filename, fsi_data):
     msg = ""
     pnl_df = None
     preview_table = None
+
     if upload_contents is not None:
         try:
+            # Decode uploaded file
             content_type, content_string = upload_contents.split(',')
             decoded = base64.b64decode(content_string)
-            if upload_filename.lower().endswith('.csv'):
+
+            if upload_filename and upload_filename.lower().endswith('.csv'):
                 pnl_df = pd.read_csv(io.BytesIO(decoded))
             else:
                 pnl_df = pd.read_excel(io.BytesIO(decoded))
+
+            # Normalize and strip column names
             pnl_df.columns = [c.strip() for c in pnl_df.columns]
-            # Allow case-insensitive match for date/pl
-            col_map = {c.lower(): c for c in pnl_df.columns}
-            if not {'date', 'p/l'}.issubset(set(col_map)):
-                msg = "File must contain 'Date' and 'P/L' columns."
+            lower_map = {c.lower(): c for c in pnl_df.columns}
+
+            # Accept common variants for date and pnl column names
+            date_candidates = ['date', 'datetime', 'timestamp']
+            pnl_candidates  = ['p/l', 'p&l', 'pnl', 'pl', 'return', 'ret', 'pnl%', 'p/l %', 'p&l %']
+
+            date_col = next((lower_map[c] for c in date_candidates if c in lower_map), None)
+            pnl_col  = next((lower_map[c] for c in pnl_candidates  if c in lower_map), None)
+
+            if date_col is None or pnl_col is None:
+                msg = ("File must contain a Date column and a PnL column "
+                       "(accepted names: Date/Datetime/Timestamp + P/L, P&L, PnL, Return, etc.).")
                 pnl_df = None
             else:
-                pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
-                pnl_df['P/L'] = pnl_df[col_map['p/l']]
-                pnl_df = pnl_df.set_index('Date')
-                pnl_df = pnl_df.sort_index()
+                # Parse dates
+                pnl_df['Date'] = pd.to_datetime(pnl_df[date_col], errors='coerce')
+                pnl_df = pnl_df.dropna(subset=['Date'])
+
+                # Parse PnL values, handle percent strings and scaling
+                pnl_series_raw = pnl_df[pnl_col]
+                if pnl_series_raw.dtype == object:
+                    pnl_series_clean = pnl_series_raw.astype(str).str.replace('%', '', regex=False).str.replace(',', '')
+                    pnl_series = pd.to_numeric(pnl_series_clean, errors='coerce')
+                    if pnl_series.dropna().abs().max() > 1.0:
+                        pnl_series = pnl_series / 100.0
+                else:
+                    pnl_series = pnl_series_raw.astype(float)
+
+                # Assign standardized column names and index
+                pnl_df = pnl_df.assign(**{'P/L': pnl_series}).set_index('Date').sort_index()
+
+                # Create preview table
                 preview_table = dash_table.DataTable(
-                    data=pnl_df.reset_index().head(5).to_dict('records'),
-                    columns=[{"name": i, "id": i} for i in pnl_df.reset_index().columns],
+                    data=pnl_df.reset_index()[['Date', 'P/L']].head(5).to_dict('records'),
+                    columns=[{"name": i, "id": i} for i in ['Date', 'P/L']],
                     style_table={'maxWidth': '450px'},
                     style_cell={'font-family': 'Segoe UI, Arial', 'textAlign': 'center'},
                     style_header={'backgroundColor': '#f2f2f2', 'fontWeight': 'bold'},
                 )
                 msg = "PnL file loaded. Preview below."
+
         except Exception as e:
             msg = f"Error reading file: {e}"
             pnl_df = None
 
-    if pnl_df is not None:
+    # Plot PnL if available
+    if pnl_df is not None and not pnl_df.empty:
         fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, variable_contribs, fsi_series, regimes=regimes_full)
     else:
         fig_pnl = go.Figure()
         fig_pnl.update_layout(title="PnL Chart (Upload file to see data)")
+
     return fig_pnl, msg, preview_table
 
 # --- Set available date range after PnL upload ---
