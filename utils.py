@@ -76,19 +76,6 @@ def aggregate_contributions_by_group(df, group_map):
         raise ValueError("No group columns matched. Verify GROUP_MAP vs engineered features.")
     return out
 
-# def aggregate_contributions_by_group(contribs, group_map):
-#     """Aggregate variable contributions by group."""
-#     try:
-#         grouped = pd.DataFrame(index=contribs.index)
-#         for group, patterns in group_map.items():
-#             cols = [col for col in contribs.columns if any(p in col for p in patterns)]
-#             grouped[group] = contribs[cols].sum(axis=1)
-#         grouped['FSI'] = contribs['FSI']
-#         return grouped
-#     except Exception as e:
-#         logging.error(f"Error aggregating contributions by group: {e}", exc_info=True)
-#         return pd.DataFrame()
-
 def kalman_impute(series):
     """Impute missing values in a series using Kalman filtering."""
     try:
