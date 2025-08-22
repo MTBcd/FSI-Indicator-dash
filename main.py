@@ -28,7 +28,7 @@ def load_configuration(config_file='config.ini'):
     config.read(config_file)
     return config
 
-def merge_data(config, max_age_hours=0):
+def merge_data(config, max_age_hours=12):
     """
     Loads processed data from cache if recent, otherwise runs full pipeline and caches result.
     """
@@ -74,11 +74,6 @@ def merge_data(config, max_age_hours=0):
         dropped_cols = cols_before_drop - cols_after_drop
         logging.info(f"Dropped {dropped_cols} columns with >10% NaN. Shape now: {df.shape}")
 
-        # --- 4. Final drop of any remaining NaN rows ---
-        df = df.dropna()
-        logging.info(f"Shape after dropping remaining NaN rows: {df.shape}")
-
-
         # # --- 3. Hybrid imputation for missing values ---
         # for col in df.columns:
         #     missing_ratio = df[col].isnull().mean()
@@ -98,6 +93,9 @@ def merge_data(config, max_age_hours=0):
         # df = df.dropna()  # Drop any remaining NaN rows (should be rare)
         # logging.info(f"Shape after dropping remaining NaN: {df.shape}")
 
+        # --- 4. Final drop of any remaining NaN rows ---
+        df = df.dropna()
+        logging.info(f"Shape after dropping remaining NaN rows: {df.shape}")
 
         # --- 5. Defensive check for empty or too-narrow dataframe ---
         if df.empty or df.shape[1] < 2:
