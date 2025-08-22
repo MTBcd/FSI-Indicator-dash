@@ -255,10 +255,9 @@ app.layout = html.Div([
             "Historical Regime Transition Matrix",
             info_icon("Rows: FROM regime; Cols: TO regime. Shows likelihood of switching between risk regimes.")
         ]),
-        # dcc.Graph(id='regime-transition-matrix'),
         html.Div(
-            dcc.Graph(id='regime-transition-matrix'),
-            style={"textAlign": "center", "maxWidth": "440px", "margin": "0 auto"}
+            dcc.Graph(id='regime-transition-matrix', style={"height": "600px"}),
+            style={"textAlign": "center", "width": "95%", "margin": "0 auto"}
         ),
         html.H4([
             "Average Time Spent in Each Regime",

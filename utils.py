@@ -27,7 +27,6 @@ def normalize_loadings(weights):
         logging.error(f"Error normalizing loadings: {e}", exc_info=True)
         return weights
 
-
 def moving_average_deviation(series, window, invert=False):
     """Calculate the deviation from the moving average."""
     try:
@@ -38,7 +37,6 @@ def moving_average_deviation(series, window, invert=False):
         logging.error(f"Error calculating moving average deviation: {e}", exc_info=True)
         return pd.Series()
 
-
 def absolute_deviation_rotated(series, window):
     """Calculate the rotated absolute deviation from the moving average."""
     try:
@@ -47,7 +45,6 @@ def absolute_deviation_rotated(series, window):
     except Exception as e:
         logging.error(f"Error calculating absolute deviation rotated: {e}", exc_info=True)
         return pd.Series()
-
 
 def absolute_deviation(series, window, invert=False):
     """Calculate the absolute deviation from the moving average."""
@@ -58,7 +55,6 @@ def absolute_deviation(series, window, invert=False):
     except Exception as e:
         logging.error(f"Error calculating absolute deviation: {e}", exc_info=True)
         return pd.Series()
-
 
 def aggregate_contributions_by_group(df, group_map):
     out = pd.DataFrame(index=df.index)
@@ -135,33 +131,106 @@ def impute_data(df):
 
 
 
-##############################
+###################### LESS SENSITIVE framework ##############################
 
-
-def adaptive_quantile_thresholds(series, window=500, quantiles=(0.40, 0.75, 0.95)):
+def adaptive_quantile_thresholds(series, window=500, quantiles=(0.45, 0.80, 0.96)):
     q_green = series.rolling(window, min_periods=window//2).quantile(quantiles[0])
     q_amber = series.rolling(window, min_periods=window//2).quantile(quantiles[1])
     q_red   = series.rolling(window, min_periods=window//2).quantile(quantiles[2])
-    thresholds = pd.DataFrame({
-        'green': q_green,
-        'amber': q_amber,
-        'red': q_red
-    })
-    return thresholds
+    return pd.DataFrame({'green': q_green, 'amber': q_amber, 'red': q_red})
 
-def ewma_volatility(series, lambda_=0.94):
+def ewma_volatility(series, lambda_=0.97):
     returns = series.pct_change().dropna()
     squared_returns = returns ** 2
     span = (2 / (1 - lambda_)) - 1
     ewma_vol = squared_returns.ewm(span=span, min_periods=30).mean().apply(np.sqrt)
     return ewma_vol.reindex(series.index).ffill()
 
-def volatility_spike_flags(series, vol_window=250, spike_quantile=0.9, lambda_=0.94):
+def volatility_spike_flags(series, vol_window=300, spike_quantile=0.95, lambda_=0.97):
     ewma_vol = ewma_volatility(series, lambda_)
     vol_change = ewma_vol.diff()
     spike_threshold = vol_change.rolling(vol_window).quantile(spike_quantile)
     spike_flags = vol_change > spike_threshold
     return spike_flags.fillna(False)
+
+def classify_risk_regime_hybrid(
+    fsi_series,
+    vol_window=20,
+    vol_spike_quantile=0.95,   # was 0.90
+    simplify_to_3=False
+):
+    try:
+        ranks = rankdata(fsi_series)
+        percentiles = pd.Series(ranks / len(fsi_series), index=fsi_series.index)
+
+        fsi_vol = fsi_series.rolling(vol_window).std()
+        fsi_vol_delta = fsi_vol.diff()
+        vol_spike_threshold = fsi_vol_delta.quantile(vol_spike_quantile)
+        vol_spike_flags = (fsi_vol_delta > vol_spike_threshold).reindex(fsi_series.index).fillna(False)
+
+        # New breakpoints: 0.40 / 0.80 / 0.96
+        p1, p2, p3 = 0.40, 0.80, 0.96
+
+        # Spikes (softer): fewer yellows at low percentiles, push Amber/Red thresholds up
+        spike_yellow = (vol_spike_flags) & (percentiles <= p1)                         # <= 0.40
+        spike_amber  = (vol_spike_flags) & (percentiles > p1) & (percentiles <= p2)    # (0.40, 0.80]
+        spike_red    = (vol_spike_flags) & (percentiles > p2)                          # > 0.80 → Red
+
+        # No spike
+        nospike_green  = (~vol_spike_flags) & (percentiles <= p1)
+        nospike_yellow = (~vol_spike_flags) & (percentiles > p1) & (percentiles <= p2)
+        nospike_amber  = (~vol_spike_flags) & (percentiles > p2) & (percentiles <= p3)
+        nospike_red    = (~vol_spike_flags) & (percentiles > p3)
+
+        regimes = pd.Series(index=fsi_series.index, dtype='object')
+        regimes[spike_yellow]   = 'Yellow'
+        regimes[spike_amber]    = 'Amber'
+        regimes[spike_red]      = 'Red'
+        regimes[nospike_green]  = 'Green'
+        regimes[nospike_yellow] = 'Yellow'
+        regimes[nospike_amber]  = 'Amber'
+        regimes[nospike_red]    = 'Red'
+
+        regimes = regimes.fillna('Yellow')
+        if simplify_to_3:
+            regimes = regimes.replace({'Amber': 'Red'})
+        return regimes
+    except Exception as e:
+        logging.error(f"Error classifying risk regime: {e}", exc_info=True)
+        return pd.Series()
+
+
+
+
+
+
+##############################
+
+
+# def adaptive_quantile_thresholds(series, window=500, quantiles=(0.40, 0.75, 0.95)):
+#     q_green = series.rolling(window, min_periods=window//2).quantile(quantiles[0])
+#     q_amber = series.rolling(window, min_periods=window//2).quantile(quantiles[1])
+#     q_red   = series.rolling(window, min_periods=window//2).quantile(quantiles[2])
+#     thresholds = pd.DataFrame({
+#         'green': q_green,
+#         'amber': q_amber,
+#         'red': q_red
+#     })
+#     return thresholds
+
+# def ewma_volatility(series, lambda_=0.94):
+#     returns = series.pct_change().dropna()
+#     squared_returns = returns ** 2
+#     span = (2 / (1 - lambda_)) - 1
+#     ewma_vol = squared_returns.ewm(span=span, min_periods=30).mean().apply(np.sqrt)
+#     return ewma_vol.reindex(series.index).ffill()
+
+# def volatility_spike_flags(series, vol_window=250, spike_quantile=0.9, lambda_=0.94):
+#     ewma_vol = ewma_volatility(series, lambda_)
+#     vol_change = ewma_vol.diff()
+#     spike_threshold = vol_change.rolling(vol_window).quantile(spike_quantile)
+#     spike_flags = vol_change > spike_threshold
+#     return spike_flags.fillna(False)
 
 def classify_adaptive_regime(fsi_series, quantile_window=500, vol_window=250, spike_quantile=0.9, lambda_=0.94):
     thresholds = adaptive_quantile_thresholds(fsi_series, window=quantile_window)
@@ -274,61 +343,61 @@ def classify_adaptive_regime_hybrid_fallback(
 
 
 
-def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.9, simplify_to_3=False):
-    """
-    Hybrid regime classification combining quantile levels and volatility spikes.
+# def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.9, simplify_to_3=False):
+#     """
+#     Hybrid regime classification combining quantile levels and volatility spikes.
 
-    Parameters:
-        fsi_series (pd.Series): FSI index series.
-        vol_window (int): Rolling window for FSI volatility.
-        vol_spike_quantile (float): Threshold for volatility change to qualify as a spike.
-        simplify_to_3 (bool): If True, collapse Amber and Red into a single 'Red'.
+#     Parameters:
+#         fsi_series (pd.Series): FSI index series.
+#         vol_window (int): Rolling window for FSI volatility.
+#         vol_spike_quantile (float): Threshold for volatility change to qualify as a spike.
+#         simplify_to_3 (bool): If True, collapse Amber and Red into a single 'Red'.
 
-    Returns:
-        pd.Series: Regime labels (Green, Yellow, Amber, Red)
-    """
-    try:
-        # Compute ECDF percentiles
-        ranks = rankdata(fsi_series)
-        percentiles = pd.Series(ranks / len(fsi_series), index=fsi_series.index)
+#     Returns:
+#         pd.Series: Regime labels (Green, Yellow, Amber, Red)
+#     """
+#     try:
+#         # Compute ECDF percentiles
+#         ranks = rankdata(fsi_series)
+#         percentiles = pd.Series(ranks / len(fsi_series), index=fsi_series.index)
 
-        # Volatility change
-        fsi_vol = fsi_series.rolling(vol_window).std()
-        fsi_vol_delta = fsi_vol.diff()
-        vol_spike_threshold = fsi_vol_delta.quantile(vol_spike_quantile)
-        vol_spike_flags = (fsi_vol_delta > vol_spike_threshold).reindex(fsi_series.index).fillna(False)
+#         # Volatility change
+#         fsi_vol = fsi_series.rolling(vol_window).std()
+#         fsi_vol_delta = fsi_vol.diff()
+#         vol_spike_threshold = fsi_vol_delta.quantile(vol_spike_quantile)
+#         vol_spike_flags = (fsi_vol_delta > vol_spike_threshold).reindex(fsi_series.index).fillna(False)
 
-        # Vectorized regime classification logic
-        # For volatility spikes
-        spike_yellow = (vol_spike_flags) & (percentiles <= 0.35)
-        spike_amber  = (vol_spike_flags) & (percentiles > 0.35) & (percentiles <= 0.75)
-        spike_red    = (vol_spike_flags) & (percentiles > 0.75)  # All > 0.75 go to Red (including > 0.95 as in original)
+#         # Vectorized regime classification logic
+#         # For volatility spikes
+#         spike_yellow = (vol_spike_flags) & (percentiles <= 0.35)
+#         spike_amber  = (vol_spike_flags) & (percentiles > 0.35) & (percentiles <= 0.75)
+#         spike_red    = (vol_spike_flags) & (percentiles > 0.75)  # All > 0.75 go to Red (including > 0.95 as in original)
 
-        # For no spike
-        nospike_green = (~vol_spike_flags) & (percentiles <= 0.35)
-        nospike_yellow = (~vol_spike_flags) & (percentiles > 0.35) & (percentiles <= 0.75)
-        nospike_amber  = (~vol_spike_flags) & (percentiles > 0.75) & (percentiles <= 0.95)
-        nospike_red    = (~vol_spike_flags) & (percentiles > 0.95)
+#         # For no spike
+#         nospike_green = (~vol_spike_flags) & (percentiles <= 0.35)
+#         nospike_yellow = (~vol_spike_flags) & (percentiles > 0.35) & (percentiles <= 0.75)
+#         nospike_amber  = (~vol_spike_flags) & (percentiles > 0.75) & (percentiles <= 0.95)
+#         nospike_red    = (~vol_spike_flags) & (percentiles > 0.95)
 
-        regimes = pd.Series(index=fsi_series.index, dtype='object')
-        regimes[spike_yellow] = 'Yellow'
-        regimes[spike_amber] = 'Amber'
-        regimes[spike_red] = 'Red'
-        regimes[nospike_green] = 'Green'
-        regimes[nospike_yellow] = 'Yellow'
-        regimes[nospike_amber] = 'Amber'
-        regimes[nospike_red] = 'Red'
+#         regimes = pd.Series(index=fsi_series.index, dtype='object')
+#         regimes[spike_yellow] = 'Yellow'
+#         regimes[spike_amber] = 'Amber'
+#         regimes[spike_red] = 'Red'
+#         regimes[nospike_green] = 'Green'
+#         regimes[nospike_yellow] = 'Yellow'
+#         regimes[nospike_amber] = 'Amber'
+#         regimes[nospike_red] = 'Red'
 
-        # Fill any missing values (e.g. due to NaN at start) with 'Green'
-        regimes = regimes.fillna('Yellow')
+#         # Fill any missing values (e.g. due to NaN at start) with 'Green'
+#         regimes = regimes.fillna('Yellow')
 
-        if simplify_to_3:
-            regimes = regimes.replace({'Amber': 'Red'})
+#         if simplify_to_3:
+#             regimes = regimes.replace({'Amber': 'Red'})
 
-        return regimes
-    except Exception as e:
-        logging.error(f"Error classifying risk regime: {e}", exc_info=True)
-        return pd.Series()
+#         return regimes
+#     except Exception as e:
+#         logging.error(f"Error classifying risk regime: {e}", exc_info=True)
+#         return pd.Series()
 
 
 def smooth_transition_regime(fsi_series, gamma=2.5, c=0.5):
