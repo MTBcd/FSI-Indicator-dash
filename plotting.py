@@ -25,7 +25,7 @@ market_events = {
     "2024-08-01": "<b>Fed starts<br>cutting rates</b>",
     "2025-04-15": "<b>Trump tariffs</b>"
 }
-
+ 
 event_heights = {
     "2018-12-24": 0.90,
     "2019-08-14": 0.67,
