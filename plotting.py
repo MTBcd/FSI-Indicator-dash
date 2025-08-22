@@ -11,7 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde, skew, kurtosis
 from numpy import trapz
-
+ 
 # chart_studio.tools.set_credentials_file(username='Tuler', api_key='EOdkt6iCFZgZvJtTdFc6')
 
 market_events = {
