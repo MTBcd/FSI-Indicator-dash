@@ -19,51 +19,6 @@ today_date = pd.to_datetime(datetime.today())
 
 # ======== FMP PRICE DATA ==========
 
-# def get_nyfed_rates_from_excel(start_date=Start_Date, end_date=None):
-#     import pandas as pd
-#     import numpy as np
-#     import logging
-#     from datetime import datetime
-
-#     if end_date is None:
-#         end_date = datetime.today().strftime('%Y-%m-%d')
-#     url = (
-#         f"https://markets.newyorkfed.org/read?startDt={start_date}&endDt={end_date}"
-#         "&eventCodes=500&productCode=50&sort=postDt:-1,eventCode:1&format=xlsx"
-#     )
-#     try:
-#         df = pd.read_excel(url)
-#         df['Effective Date'] = pd.to_datetime(df['Effective Date'])
-
-#         # Pivot for rates
-#         rates = df.pivot(index='Effective Date', columns='Rate Type', values='Rate (%)')
-
-#         # Find the actual volume column
-#         volume_col = None
-#         for col in df.columns:
-#             if 'volume' in col.lower():
-#                 volume_col = col
-#                 break
-
-#         if volume_col:
-#             effr_vol = df[df['Rate Type'] == 'EFFR'][['Effective Date', volume_col]]
-#             effr_vol = effr_vol.set_index('Effective Date')
-#             effr_vol = effr_vol[~effr_vol.index.duplicated(keep='first')]
-#             rates['EFFR_VOLUME'] = effr_vol[volume_col]
-#         else:
-#             rates['EFFR_VOLUME'] = np.nan
-
-#         for col in ['EFFR', 'EFFR_VOLUME']:
-#             if col not in rates.columns:
-#                 rates[col] = np.nan
-#         rates = rates[['EFFR', 'EFFR_VOLUME']]
-#         rates = rates.sort_index()
-#         return rates
-#     except Exception as e:
-#         logging.error(f"Failed to fetch NY Fed Excel rates: {e}")
-#         return pd.DataFrame()
-
-
 def get_nyfed_rates_from_excel(start_date=Start_Date, end_date=None):
     import pandas as pd
     import logging
