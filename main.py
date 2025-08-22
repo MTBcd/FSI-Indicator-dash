@@ -28,7 +28,7 @@ def load_configuration(config_file='config.ini'):
     config.read(config_file)
     return config
 
-def merge_data(config, max_age_hours=12):
+def merge_data(config, max_age_hours=0):
     """
     Loads processed data from cache if recent, otherwise runs full pipeline and caches result.
     """
@@ -141,8 +141,8 @@ def merge_data(config, max_age_hours=12):
             # --- Funding & Liquidity ---
             if 'EFFR' in df.columns:
                 df[f'EFFR_stress_{window}'] = absolute_deviation(df['EFFR'], window)
-            if 'EFFR_VOLUME' in df.columns:
-                df[f'EFFR_VOLUME_{window}'] = absolute_deviation(df['EFFR_VOLUME'], window)
+            # if 'EFFR_VOLUME' in df.columns:
+            #     df[f'EFFR_VOLUME_{window}'] = absolute_deviation(df['EFFR_VOLUME'], window)
 
             # --- Credit/OAS ---
             if 'US IG OAS' in df.columns:
@@ -241,7 +241,7 @@ def main():
             "2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"
         ],
         "Funding": [
-            "3M_TBill_stress_250", "EFFR_stress_250", "EFFR_VOLUME_250" # include USD only if DXY fetched
+            "3M_TBill_stress_250", "EFFR_stress_250" # include USD only if DXY fetched, "EFFR_VOLUME_250"
         ],
         "Credit": [
             "IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"
