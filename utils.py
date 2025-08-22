@@ -130,7 +130,6 @@ def impute_data(df):
 
 
 
-
 ###################### LESS SENSITIVE framework ##############################
 
 def adaptive_quantile_thresholds(series, window=500, quantiles=(0.45, 0.80, 0.96)):
@@ -139,7 +138,7 @@ def adaptive_quantile_thresholds(series, window=500, quantiles=(0.45, 0.80, 0.96
     q_red   = series.rolling(window, min_periods=window//2).quantile(quantiles[2])
     return pd.DataFrame({'green': q_green, 'amber': q_amber, 'red': q_red})
 
-def ewma_volatility(series, lambda_=0.97):
+def ewma_volatility(series, lambda_=0.96):
     returns = series.pct_change().dropna()
     squared_returns = returns ** 2
     span = (2 / (1 - lambda_)) - 1
@@ -156,7 +155,7 @@ def volatility_spike_flags(series, vol_window=300, spike_quantile=0.95, lambda_=
 def classify_risk_regime_hybrid(
     fsi_series,
     vol_window=20,
-    vol_spike_quantile=0.95,   # was 0.90
+    vol_spike_quantile=0.92,   # was 0.90
     simplify_to_3=False
 ):
     try:
