@@ -115,10 +115,10 @@ def merge_data(config, max_age_hours=0):
                 df[f'OVX_dev_{window}'] = moving_average_deviation(df['OVX'], window)
             if 'VIX3M' in df.columns:
                 df[f'VIX3M_dev_{window}'] = moving_average_deviation(df['VIX3M'], window)
-                if 'VIX' in df.columns:
-                    # optional term-structure measure
-                    spread = (df['VIX'] - df['VIX3M']).rename('VIX_minus_VIX3M')
-                    df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(spread, window)
+                # if 'VIX' in df.columns:
+                #     # optional term-structure measure
+                #     spread = (df['VIX'] - df['VIX3M']).rename('VIX_minus_VIX3M')
+                #     df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(spread, window)
 
             # --- Safe-Haven / FX ---
             if 'Gold Price' in df.columns:
@@ -235,7 +235,7 @@ def main():
     group_map = {
         "Volatility": [
             "VIX_dev_250", "MOVE_dev_250", "OVX_dev_250",
-            "VIX3M_dev_250", "VIX_VIX3M_spread_dev_250"  # if engineered
+            "VIX3M_dev_250", #"VIX_VIX3M_spread_dev_250"  # if engineered
         ],
         "Rates": [
             "2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"

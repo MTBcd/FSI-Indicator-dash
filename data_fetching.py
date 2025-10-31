@@ -185,8 +185,8 @@ def get_all_series(config):
         data['10Y-2Y Slope'] = data['10Y Yield'] - data['2Y Yield']
     if '10Y Yield' in data and '3M T-Bill' in data:
         data['10Y-3M Slope'] = data['10Y Yield'] - data['3M T-Bill']
-    if 'VIX' in data and 'VIX3M' in data:
-        data['VIX-VIX3M Spread'] = data['VIX'] - data['VIX3M']
+    # if 'VIX' in data and 'VIX3M' in data:
+    #     data['VIX-VIX3M Spread'] = data['VIX'] - data['VIX3M']
 
     # --- Combine all into DataFrame, filter to start_date ---
     df_final = pd.concat(data, axis=1)
