@@ -1,4 +1,5 @@
 # plotting.py
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
@@ -315,6 +316,35 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
     except Exception as e:
         logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
         return None
+
+
+def plot_hhi_bar(ranking_shares: pd.Series, top_n: int = 15, title_suffix: str = ""):
+    """
+    Bar chart of top-N contributor shares (summing to 1 over variables used
+    to compute HHI). Assumes `ranking_shares` is sorted desc.
+    """
+    if ranking_shares is None or ranking_shares.empty:
+        fig = go.Figure()
+        fig.update_layout(title="No data for HHI.")
+        return fig
+
+    s = ranking_shares.head(top_n)
+    fig = go.Figure(go.Bar(
+        x=s.index.tolist(),
+        y=(s.values * 100.0),  # percent
+        name="Share (%)",
+        hovertemplate="%{x}<br>%{y:.2f}%<extra></extra>"
+    ))
+    fig.update_layout(
+        height=420,
+        template="plotly_white",
+        title=f"Top {min(top_n, len(s))} Contributors by Share {title_suffix}",
+        xaxis=dict(title="", tickangle=-30),
+        yaxis=dict(title="Share (%)", rangemode="tozero"),
+        margin=dict(l=40, r=20, t=50, b=100),
+        showlegend=False
+    )
+    return fig
 
 
 def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=None):

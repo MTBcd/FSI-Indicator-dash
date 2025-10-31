@@ -10,7 +10,7 @@ import diskcache
 import time
 import numpy as np
 
-
+  
 # --- Your framework imports ---
 from main import load_configuration, merge_data
 from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
@@ -18,11 +18,13 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
-    plot_distribution_plotly,
+    plot_distribution_plotly, plot_hhi_bar
 )
 from utils import (
     aggregate_contributions_by_group,
-    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, classify_risk_regime_hybrid, average_time_in_regime, classify_adaptive_regime_hybrid_fallback
+    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, 
+    classify_risk_regime_hybrid, average_time_in_regime, classify_adaptive_regime_hybrid_fallback,
+    compute_hhi_ranking
 )
 
 # --- Consistent Regime Colors ---
@@ -121,6 +123,26 @@ app.layout = html.Div([
                     dcc.Graph(id='fig2'),
                     html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
                 ]),
+
+                # Herfindahl–Hirschman Index of variable contribution
+                html.Div([
+                    html.H2([
+                        "Concentration of Contributors (HHI, last 20 days)",
+                        info_icon("Herfindahl–Hirschman Index of variable contribution shares over the last 20 days. Higher HHI = more concentrated.")
+                    ]),
+                    html.Div(id="hhi-metrics", style={"margin": "6px 0 10px 0", "fontSize": "1.05em"}),
+                    dcc.Graph(id='fig-hhi', style={"marginBottom": "10px"}),
+                    dash_table.DataTable(
+                        id='hhi-table',
+                        columns=[{"name": "Variable", "id": "Variable"},
+                                {"name": "Share (%)", "id": "Share"}],
+                        data=[],
+                        style_table={'maxWidth': '800px'},
+                        style_cell={'font-family': 'Segoe UI, Arial', 'textAlign': 'left'},
+                        style_header={'backgroundColor': '#f2f2f2', 'fontWeight': 'bold'},
+                        page_size=15
+                    )
+                ], style={"marginBottom": "30px"}),
 
                 # --- Improved PnL Chart Section ---
                 html.Div([
@@ -401,6 +423,9 @@ def run_full_pipeline(n_clicks):
         Output('prob-red-xgb', 'figure'),
         Output('regime-transition-matrix', 'figure'),
         Output('avg-time-table', 'children'), 
+        Output('fig-hhi', 'figure'),     # <-- NEW
+        Output('hhi-metrics', 'children'), # <-- NEW
+        Output('hhi-table', 'data'),     # <-- NEW
     ],
     [
         Input('fsi-store', 'data'),
@@ -584,7 +609,28 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
         })
     ], style={"marginTop": "15px", "marginBottom": "20px"})
 
-    return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table
+    # --- HHI over last 20 rows of VARIABLE-LEVEL contributions in the filtered slice ---
+    # variable_contribs currently matches `idx` (filtered by date above).
+    hhi, eff_n, ranking = compute_hhi_ranking(variable_contribs, window=20)
+
+    # Bar chart of top contributors (shares already sorted desc)
+    fig_hhi = plot_hhi_bar(ranking, top_n=15, title_suffix="(last 20 days)")
+
+    # Small metrics line
+    if np.isnan(hhi):
+        hhi_text = "HHI unavailable for the selected range."
+    else:
+        hhi_text = (f"HHI = <b>{hhi:.3f}</b>  |  "
+                    f"Effective number of contributors ≈ <b>{eff_n:.1f}</b> "
+                    f"(= 1/HHI)")
+
+    # Data for the ranking table (top 20)
+    table_data = []
+    if ranking is not None and not ranking.empty:
+        top = ranking.head(20) * 100.0
+        table_data = [{"Variable": k, "Share": f"{v:.2f}%"} for k, v in top.items()]
+
+    return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table, fig_hhi, hhi_text, table_data
 
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---

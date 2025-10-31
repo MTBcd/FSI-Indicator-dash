@@ -1,4 +1,5 @@
 # utils.py
+
 import numpy as np
 import pandas as pd
 import logging
@@ -560,6 +561,37 @@ def predict_regime_probability(
 
     return most_recent_proba, proba_full, feature_importance, best_model, best_score
 
+
+# --- HHI helpers ---
+
+def compute_hhi_ranking(contribs: pd.DataFrame, window: int = 20):
+    """
+    Compute HHI of variable contributions over the last `window` rows and
+    return (hhi, effective_n, ranking_shares).
+
+    - Uses absolute contributions so positive/negative don't cancel.
+    - Drops 'FSI' column if present.
+    """
+    if contribs is None or contribs.empty:
+        return np.nan, np.nan, pd.Series(dtype=float)
+
+    recent = contribs.tail(window).copy()
+    vars_only = recent.drop(columns=['FSI'], errors='ignore')
+
+    # average absolute contribution per variable
+    avg_abs = vars_only.abs().mean()
+
+    # normalize to shares
+    total = avg_abs.sum()
+    if total == 0 or np.isnan(total):
+        return np.nan, np.nan, pd.Series(dtype=float)
+
+    shares = (avg_abs / total).sort_values(ascending=False)
+
+    # HHI and "effective number of contributors"
+    hhi = float((shares ** 2).sum())
+    effective_n = float(1.0 / hhi) if hhi > 0 else np.nan
+    return hhi, effective_n, shares
 
 
 def compute_transition_matrix(series):
