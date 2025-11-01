@@ -13,7 +13,7 @@ import numpy as np
   
 # --- Your framework imports ---
 from main import load_configuration, merge_data
-from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
+from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions, compute_timevarying_contributions
 from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
@@ -370,8 +370,12 @@ def run_full_pipeline(n_clicks):
                 omega_history *= -1
     # --- end orientation ---
 
-    latest_omega = omega_history.iloc[-1]
-    variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+    # latest_omega = omega_history.iloc[-1]
+    # variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+
+    variable_contribs = compute_timevarying_contributions(
+        df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size']))
+
     group_map = {
         "Volatility": [
             "VIX_dev_250", "MOVE_dev_250", "OVX_dev_250",
@@ -512,8 +516,15 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
         )
         return fig
 
-    prob_logit, _, _, _, score_logit = predict_regime_probability(df_all, model_type='logit', lookahead=20)
-    prob_xgb, _, _, _, score_xgb = predict_regime_probability(df_all, model_type='xgboost', lookahead=20)
+
+    prob_logit, _, _, _, score_logit = predict_regime_probability(
+        df_all, model_type='logit', lookahead=20, n_splits=5, use_purged=True, embargo=20)
+    prob_xgb, _, _, _, score_xgb = predict_regime_probability(
+        df_all, model_type='xgboost', lookahead=20, n_splits=5, use_purged=True, embargo=20)
+
+    # prob_logit, _, _, _, score_logit = predict_regime_probability(df_all, model_type='logit', lookahead=20)
+    # prob_xgb, _, _, _, score_xgb = predict_regime_probability(df_all, model_type='xgboost', lookahead=20)
+
     fig_prob_logit = make_prob_gauge(prob_logit, f"Logit P(Red) (AUC: {score_logit:.2f})")
     fig_prob_xgb = make_prob_gauge(prob_xgb, f"XGBoost P(Red) (AUC: {score_xgb:.2f})")
 

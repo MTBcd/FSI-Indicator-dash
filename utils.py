@@ -15,6 +15,12 @@ from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV, StratifiedKFold
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import BaseCrossValidator
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import TimeSeriesSplit
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -131,6 +137,7 @@ def impute_data(df):
 
 
 
+
 ###################### LESS SENSITIVE framework ##############################
 
 def adaptive_quantile_thresholds(series, window=500, quantiles=(0.45, 0.80, 0.96)):
@@ -200,11 +207,156 @@ def classify_risk_regime_hybrid(
         return pd.Series()
 
 
+##########################################################
+##########################################################
+
+class PurgedTimeSeriesSplit(BaseCrossValidator):
+    """
+    Time-series split with optional embargo (in samples) to prevent leakage around split boundaries
+    and optional lookahead purge (in samples) for label construction like y_t+N.
+    Splits are contiguous and respect time order.
+    """
+    def __init__(self, n_splits=5, embargo=0, lookahead=0):
+        if n_splits < 2:
+            raise ValueError("n_splits must be >= 2")
+        self.n_splits = n_splits
+        self.embargo = int(embargo)
+        self.lookahead = int(lookahead)
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return self.n_splits
+
+    def split(self, X, y=None, groups=None):
+        n_samples = len(X)
+        indices = np.arange(n_samples)
+
+        test_size = n_samples // self.n_splits
+        test_starts = [i * test_size for i in range(self.n_splits)]
+        test_stops  = test_starts[1:] + [n_samples]
+
+        for start, stop in zip(test_starts, test_stops):
+            test_indices = indices[start:stop]
+
+            # Embargo around test to avoid leakage
+            left_cut  = max(0, start - self.embargo)
+            right_cut = min(n_samples, stop + self.embargo)
+
+            # Purge lookahead on the TRAIN side (labels use t+lookahead)
+            purge_right = min(n_samples, start + self.lookahead)
+
+            train_left  = indices[:left_cut]
+            train_mid   = indices[right_cut:purge_right]  # will be empty if right_cut >= purge_right
+            train_right = indices[purge_right:]
+
+            # Concatenate legal train regions that do not overlap with test or lookahead
+            train_indices = np.concatenate([train_left, train_mid, train_right])
+            # Remove any overlap with test indices
+            train_indices = train_indices[~np.isin(train_indices, test_indices)]
+
+            yield train_indices, test_indices
 
 
+def predict_regime_probability(
+    df, 
+    model_type='xgboost', 
+    lookahead=20, 
+    columns=None,
+    xgb_grid=None,
+    logit_grid=None,
+    n_splits=5,
+    scoring='roc_auc',
+    use_purged=True,
+    embargo=0
+):
+    """
+    Leakage-aware prediction of P(Red in N days).
+    - Builds y = 1{Regime_{t+lookahead} == 'Red'}
+    - Uses Pipeline(scaler -> model) so scaling is fit within each CV fold
+    - Uses TimeSeriesSplit or PurgedTimeSeriesSplit (with lookahead & embargo)
+    """
+    if 'Regime' not in df.columns:
+        raise ValueError("'Regime' column required for regime prediction.")
+
+    df = df.copy()
+    df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
+    df_logit = df.dropna().copy()
+
+    exclude = ['Future_Red', 'Regime', 'HMM_State']
+    if columns is None:
+        columns = [c for c in df_logit.columns if c not in exclude]
+    X = df_logit[columns].values
+    y = df_logit['Future_Red'].values
+
+    # Build model pipeline
+    if model_type == 'xgboost':
+        from xgboost import XGBClassifier
+        base = XGBClassifier(
+            eval_metric='logloss',
+            random_state=42
+        )
+        pipe = Pipeline([
+            ('scaler', StandardScaler(with_mean=True, with_std=True)),
+            ('clf', base)
+        ])
+        if xgb_grid is None:
+            xgb_grid = {
+                'clf__n_estimators': [200, 400],
+                'clf__max_depth': [3, 5],
+                'clf__learning_rate': [0.03, 0.1],
+                'clf__subsample': [0.7, 1.0],
+                'clf__colsample_bytree': [0.8, 1.0],
+            }
+        param_grid = xgb_grid
+    else:
+        from sklearn.linear_model import LogisticRegression
+        base = LogisticRegression(max_iter=1200, random_state=42)
+        pipe = Pipeline([
+            ('scaler', StandardScaler()),
+            ('clf', base)
+        ])
+        if logit_grid is None:
+            logit_grid = {
+                'clf__C': [0.01, 0.1, 1, 10],
+                'clf__penalty': ['l2'],
+                'clf__solver': ['lbfgs', 'liblinear']
+            }
+        param_grid = logit_grid
+
+    # Splitter: purged TSS or vanilla TSS
+    if use_purged:
+        cv = PurgedTimeSeriesSplit(n_splits=n_splits, embargo=embargo, lookahead=lookahead)
+    else:
+        cv = TimeSeriesSplit(n_splits=n_splits)
+
+    search = GridSearchCV(
+        estimator=pipe,
+        param_grid=param_grid,
+        cv=cv,
+        scoring=scoring,
+        n_jobs=-1,
+        verbose=0,
+        refit=True
+    )
+    search.fit(X, y)
+    best_model = search.best_estimator_
+    best_score = search.best_score_
+
+    # In-sample probas (for monitoring, not for headline OOS metrics)
+    y_proba_all = best_model.predict_proba(X)[:, 1]
+    most_recent_proba = y_proba_all[-1]
+
+    # Feature importance (mapped if possible)
+    if model_type == 'xgboost':
+        importance = best_model.named_steps['clf'].feature_importances_
+    else:
+        importance = np.abs(best_model.named_steps['clf'].coef_[0])
+    feature_importance = dict(zip(columns, importance))
+
+    return most_recent_proba, y_proba_all, feature_importance, best_model, best_score
 
 
-##############################
+###########################################################
+##########################################################
 
 
 # def adaptive_quantile_thresholds(series, window=500, quantiles=(0.40, 0.75, 0.95)):
@@ -340,7 +492,7 @@ def classify_adaptive_regime_hybrid_fallback(
 
 
 
-
+###################################
 
 
 # def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.9, simplify_to_3=False):
@@ -462,105 +614,110 @@ def run_hmm(df, n_states=4, columns=None):
     return most_recent_state, df_result, state_probs
 
 
+#########=========================================================================================
+#########=========================================================================================
 
-def predict_regime_probability(
-    df, 
-    model_type='xgboost', 
-    lookahead=20, 
-    columns=None,
-    xgb_grid=None,
-    logit_grid=None,
-    n_splits=5,
-    scoring='roc_auc'
-):
-    """
-    Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression,
-    with TimeSeriesSplit and hyperparameter optimization.
-    Returns most recent probability, full predicted probability series, variable importance,
-    best estimator, and cross-validated metric.
-    """
-    if 'Regime' not in df.columns:
-        raise ValueError("'Regime' column required for regime prediction.")
 
-    df = df.copy()
-    df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
-    df_logit = df.dropna()
+# def predict_regime_probability(
+#     df, 
+#     model_type='xgboost', 
+#     lookahead=20, 
+#     columns=None,
+#     xgb_grid=None,
+#     logit_grid=None,
+#     n_splits=5,
+#     scoring='roc_auc'
+# ):
+#     """
+#     Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression,
+#     with TimeSeriesSplit and hyperparameter optimization.
+#     Returns most recent probability, full predicted probability series, variable importance,
+#     best estimator, and cross-validated metric.
+#     """
+#     if 'Regime' not in df.columns:
+#         raise ValueError("'Regime' column required for regime prediction.")
 
-    # --- Build feature set as a DataFrame and remember names
-    exclude = ['Future_Red', 'Regime', 'HMM_State']
-    if columns is None:
-        columns = [c for c in df_logit.columns if c not in exclude]
-    X = df_logit[columns]                      # keep as DataFrame
-    y = df_logit['Future_Red']
-    feature_cols = X.columns.tolist()          # <-- remember names
+#     df = df.copy()
+#     df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
+#     df_logit = df.dropna()
 
-    # --- Scale but preserve DataFrame structure
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    X = pd.DataFrame(X_scaled, columns=feature_cols, index=df_logit.index)  # <-- wrap back to DF
+#     # --- Build feature set as a DataFrame and remember names
+#     exclude = ['Future_Red', 'Regime', 'HMM_State']
+#     if columns is None:
+#         columns = [c for c in df_logit.columns if c not in exclude]
+#     X = df_logit[columns]                      # keep as DataFrame
+#     y = df_logit['Future_Red']
+#     feature_cols = X.columns.tolist()          # <-- remember names
 
-    # StratifiedKFold for classification
-    tscv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+#     # --- Scale but preserve DataFrame structure
+#     scaler = StandardScaler()
+#     X_scaled = scaler.fit_transform(X)
+#     X = pd.DataFrame(X_scaled, columns=feature_cols, index=df_logit.index)  # <-- wrap back to DF
 
-    # Hyperparameter grids
-    if model_type == 'xgboost':
-        from xgboost import XGBClassifier
-        if xgb_grid is None:
-            xgb_grid = {
-                'n_estimators': [100, 200],
-                'max_depth': [3, 5],
-                'learning_rate': [0.01, 0.1],
-                'subsample': [0.7, 1.0],
-            }
-        model = XGBClassifier(eval_metric='logloss', random_state=42)
-        search = GridSearchCV(
-            estimator=model,
-            param_grid=xgb_grid,
-            cv=tscv,
-            scoring=scoring,
-            n_jobs=-1,
-            verbose=0
-        )
-    else:
-        from sklearn.linear_model import LogisticRegression
-        if logit_grid is None:
-            logit_grid = {
-                'C': [0.01, 0.1, 1, 10],
-                'penalty': ['l2'],
-                'solver': ['lbfgs', 'liblinear'],
-                'max_iter': [700, 1200]
-            }
-        model = LogisticRegression()
-        search = GridSearchCV(
-            estimator=model,
-            param_grid=logit_grid,
-            cv=tscv,
-            scoring=scoring,
-            n_jobs=-1,
-            verbose=0
-        )
+#     # StratifiedKFold for classification
+#     tscv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
-    search.fit(X, y)
-    best_model = search.best_estimator_
-    best_score = search.best_score_
+#     # Hyperparameter grids
+#     if model_type == 'xgboost':
+#         from xgboost import XGBClassifier
+#         if xgb_grid is None:
+#             xgb_grid = {
+#                 'n_estimators': [100, 200],
+#                 'max_depth': [3, 5],
+#                 'learning_rate': [0.01, 0.1],
+#                 'subsample': [0.7, 1.0],
+#             }
+#         model = XGBClassifier(eval_metric='logloss', random_state=42)
+#         search = GridSearchCV(
+#             estimator=model,
+#             param_grid=xgb_grid,
+#             cv=tscv,
+#             scoring=scoring,
+#             n_jobs=-1,
+#             verbose=0
+#         )
+#     else:
+#         from sklearn.linear_model import LogisticRegression
+#         if logit_grid is None:
+#             logit_grid = {
+#                 'C': [0.01, 0.1, 1, 10],
+#                 'penalty': ['l2'],
+#                 'solver': ['lbfgs', 'liblinear'],
+#                 'max_iter': [700, 1200]
+#             }
+#         model = LogisticRegression()
+#         search = GridSearchCV(
+#             estimator=model,
+#             param_grid=logit_grid,
+#             cv=tscv,
+#             scoring=scoring,
+#             n_jobs=-1,
+#             verbose=0
+#         )
 
-    # Predict proba for entire data (align with df_logit)
-    y_proba = best_model.predict_proba(X)[:, 1]
-    proba_full = np.full(len(df_logit), np.nan)
-    proba_full[-len(y_proba):] = y_proba
+#     search.fit(X, y)
+#     best_model = search.best_estimator_
+#     best_score = search.best_score_
 
-    # Most recent probability
-    most_recent_proba = y_proba[-1]
+#     # Predict proba for entire data (align with df_logit)
+#     y_proba = best_model.predict_proba(X)[:, 1]
+#     proba_full = np.full(len(df_logit), np.nan)
+#     proba_full[-len(y_proba):] = y_proba
 
-    # Variable importance using preserved names
-    if model_type == 'xgboost':
-        importance = best_model.feature_importances_
-    else:
-        importance = np.abs(best_model.coef_[0])
-    feature_importance = dict(zip(feature_cols, importance))  # <-- use saved names
+#     # Most recent probability
+#     most_recent_proba = y_proba[-1]
 
-    return most_recent_proba, proba_full, feature_importance, best_model, best_score
+#     # Variable importance using preserved names
+#     if model_type == 'xgboost':
+#         importance = best_model.feature_importances_
+#     else:
+#         importance = np.abs(best_model.coef_[0])
+#     feature_importance = dict(zip(feature_cols, importance))  # <-- use saved names
 
+#     return most_recent_proba, proba_full, feature_importance, best_model, best_score
+
+#########=========================================================================================
+#########=========================================================================================
 
 # --- HHI helpers ---
 

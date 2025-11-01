@@ -7,7 +7,7 @@ import numpy as np
 import os
 import time
 from data_fetching import get_all_series
-from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions
+from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions, compute_timevarying_contributions
 from plotting import (
     plot_group_contributions_with_regime, plot_grouped_contributions,
     plot_pnl_with_regime_ribbons, save_fsi_charts_to_html
@@ -226,8 +226,12 @@ def main():
 
     # === Compute contributions using latest omega ===
     logging.info("Computing contributions...")
-    latest_omega = omega_history.iloc[-1]
-    variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+    # latest_omega = omega_history.iloc[-1]
+    # variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+
+    variable_contribs = compute_timevarying_contributions(
+        df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
+        )
 
     # === Group attribution ===
     logging.info("Aggregating and plotting group-level contributions...")

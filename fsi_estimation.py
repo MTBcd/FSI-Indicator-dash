@@ -133,3 +133,37 @@ def compute_variable_contributions(df, omega):
         logging.error(f"Error computing variable contributions: {e}", exc_info=True)
         return pd.DataFrame()
 
+
+def compute_timevarying_contributions(df, omega_history, window_size):
+    """
+    Leakage-free contributions: at time t use z_t ⊙ ω_t,
+    where z_t = (x_t - mu_t) / sd_t with mu_t, sd_t computed over the LAST 'window_size' observations ending at t.
+    Inputs:
+      df            : DataFrame of engineered features (index=Date, cols=features)
+      omega_history : DataFrame of rolling loadings (index aligns to df[window-1:], cols=features)
+      window_size   : int, the same window size used in the ALS estimator
+    Returns:
+      DataFrame of variable contributions per date, with 'FSI' column as row-sum.
+    """
+    # Ensure chronological order & alignment
+    df = df.sort_index()
+    # Rolling μ, σ computed exactly like the estimator (window stats)
+    mu = df.rolling(window_size).mean().iloc[window_size-1:]
+    sd = df.rolling(window_size).std().replace(0, np.nan).iloc[window_size-1:]
+
+    # Align to ω dates
+    mu = mu.reindex(omega_history.index)
+    sd = sd.reindex(omega_history.index)
+    X = df.reindex(omega_history.index)
+
+    # Standardize per window (same as estimator)
+    Z = (X - mu) / sd
+
+    # Use only common columns, same order
+    common = omega_history.columns.intersection(Z.columns)
+    Zc = Z[common]
+    Om = omega_history[common]
+
+    contribs = Zc * Om  # elementwise: z_tj * ω_tj
+    contribs['FSI'] = contribs.sum(axis=1)
+    return contribs
