@@ -786,3 +786,195 @@ def average_time_in_regime(regime_series):
     # Average streak for each regime
     avg = {k: sum(v)/len(v) for k, v in result.items()}
     return pd.Series(avg).sort_index()
+
+
+
+
+
+
+
+
+
+
+
+
+
+########################################################
+########################################################
+########################################################
+
+
+import logging
+
+def _pick_anchor_columns(df, pref_windows=("250","252","260","126","125","63")):
+    """
+    Return best-available engineered anchors in the form actually present.
+    Preference: longer windows first.
+    """
+    # base logical anchors, without window suffix
+    base_opts = {
+        "VIX_dev": ["VIX_dev"],
+        "MOVE_dev": ["MOVE_dev"],
+        "HY_OAS_dev": ["HY_OAS_dev","US HY OAS_dev"],
+        "IG_OAS_dev": ["IG_OAS_dev","US IG OAS_dev"]
+    }
+    present = []
+    # find suffixes present (e.g., "250")
+    suffixes = []
+    for c in df.columns:
+        parts = c.rsplit("_", 1)
+        if len(parts)==2 and parts[1].isdigit():
+            suffixes.append(parts[1])
+    # prefer longer windows
+    ordered_suffixes = [s for s in pref_windows if s in set(suffixes)]
+    for s in ordered_suffixes:
+        for family, stems in base_opts.items():
+            for stem in stems:
+                col = f"{stem}_{s}"
+                if col in df.columns:
+                    present.append(col)
+        if present:  # once we collected any with this suffix, use them
+            break
+    return present
+
+def _make_stress_proxy(df):
+    """
+    Robust proxy using available credit/vol vars (already engineered, deviation-type).
+    Falls back to anything strongly 'stressy' (~OAS, VIX, MOVE).
+    Returns a pandas Series aligned to df index.
+    """
+    # candidates by importance
+    priority_groups = [
+        [c for c in df.columns if ("HY_OAS_dev" in c) or ("IG_OAS_dev" in c) or ("BBB_OAS_dev" in c)],
+        [c for c in df.columns if ("VIX_dev" in c) or ("MOVE_dev" in c) or ("OVX_dev" in c)],
+        [c for c in df.columns if ("HY_IG_spread" in c) or ("USD_stress" in c)]
+    ]
+    for group in priority_groups:
+        if group:
+            return df[group].mean(axis=1)
+    # nothing found -> zero proxy to avoid flips
+    return pd.Series(0.0, index=df.index)
+
+def orient_fsi_and_omega(
+    fsi_series: pd.Series,
+    omega_history: pd.DataFrame,
+    df_engineered: pd.DataFrame,
+    stability_series: pd.Series = None,
+    stability_threshold: float = 0.7,
+    freeze_after_days: int = 60,
+) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+    """
+    Enforce 'stress positive' orientation with anchor fallback & freezing.
+    - Try anchors at each t; if unavailable/NaN, use correlation with robust proxy.
+    - Once stable for 'freeze_after_days' (cosine >= threshold) and orientation agrees with proxy,
+      freeze sign (no further flips) unless a *compelling flip* occurs:
+      cosine < 0 (direction break) AND corr(FSI, proxy) changes sign contemporaneously.
+    Returns: (fsi_oriented, omega_oriented, audit_log_df)
+    """
+    fsi = fsi_series.copy()
+    omega = omega_history.copy()
+    idx = fsi.index
+    df_e = df_engineered.reindex(idx)
+
+    # anchors (at the suffix we actually have)
+    anchors = _pick_anchor_columns(omega)
+    proxy = _make_stress_proxy(df_e).reindex(idx)
+
+    frozen = False
+    freeze_start = None
+    flip_events = []
+
+    # running orientation state (+1 or -1)
+    sign = 1.0
+
+    # helper to compute anchor sign at t
+    def anchor_sign_t(t):
+        if not anchors:
+            return np.nan
+        vals = omega.loc[t, [a for a in anchors if a in omega.columns]]
+        m = np.nanmean(vals.values.astype(float)) if len(vals) else np.nan
+        if np.isnan(m):
+            return np.nan
+        return np.sign(m) if m != 0 else 1.0
+
+    # rolling logic
+    for i, t in enumerate(idx):
+        # 1) default: anchor sign
+        a_sign = anchor_sign_t(t)
+
+        # 2) fallback: correlation with proxy up to t
+        if np.isnan(a_sign):
+            # windowed correlation to avoid tiny sample issues
+            w = min(252, i+1)
+            if w < 30:
+                p_sign = 1.0
+            else:
+                corr = pd.concat([fsi.iloc[:i+1], proxy.iloc[:i+1]], axis=1).dropna()
+                if len(corr) < 30:
+                    p_sign = 1.0
+                else:
+                    r = corr.corr().iloc[0,1]
+                    p_sign = 1.0 if pd.isna(r) else (1.0 if r >= 0 else -1.0)
+            desired = p_sign
+            rationale = "proxy"
+        else:
+            desired = a_sign
+            rationale = "anchors"
+
+        # 3) freeze logic: after a stable stretch, stop flipping unless 'compelling'
+        if not frozen and stability_series is not None:
+            # detect stable consecutive run
+            stable_mask = (stability_series >= stability_threshold).reindex(idx).fillna(False)
+            if i >= freeze_after_days and stable_mask.iloc[max(0, i-freeze_after_days+1):i+1].all():
+                # orientation also agrees with proxy? if so, freeze now
+                w = min(252, i+1)
+                if w >= 60:
+                    corr = pd.concat([fsi.iloc[:i+1], proxy.iloc[:i+1]], axis=1).dropna()
+                    if len(corr) >= 60:
+                        r = corr.corr().iloc[0,1]
+                        if not pd.isna(r) and (r >= 0) == (desired >= 0):
+                            frozen = True
+                            freeze_start = t
+                            logging.info(f"[ORIENT] Orientation frozen at {t.date()} (stable {freeze_after_days}d, r={r:.3f}).")
+
+        # 4) apply or block flip
+        flip_now = (np.sign(desired) != np.sign(sign))
+        if frozen and flip_now:
+            # Only allow flip if 'compelling': cosine < 0 AND proxy correlation sign changed using a recent window
+            compelling = False
+            if stability_series is not None and stability_series.loc[t] < 0:
+                w = min(252, i+1)
+                pre_w = max(60, w//3)
+                corr_recent = pd.concat([fsi.iloc[max(0,i-pre_w):i+1], proxy.iloc[max(0,i-pre_w):i+1]], axis=1).dropna()
+                if len(corr_recent) >= 30:
+                    r = corr_recent.corr().iloc[0,1]
+                    # flip if correlation indicates mis-orientation
+                    compelling = (r < 0)
+            if not compelling:
+                # block the flip
+                desired = sign
+                rationale += "|frozen"
+            else:
+                rationale += "|compelling_flip"
+
+        # record event
+        if np.sign(desired) != np.sign(sign):
+            flip_events.append({"date": t, "reason": rationale})
+
+        sign = 1.0 if desired >= 0 else -1.0
+        # apply sign at time t (pointwise multiply)
+        fsi.iloc[i] = fsi.iloc[i] * sign
+        omega.iloc[i, :] = omega.iloc[i, :] * sign
+
+    # audit
+    audit = pd.DataFrame(flip_events)
+    if audit.empty:
+        logging.info("[ORIENT] No sign flips required across sample.")
+    else:
+        logging.warning(f"[ORIENT] {len(audit)} sign flip event(s).")
+    return fsi, omega, audit
+
+
+########################################################
+########################################################
+########################################################
