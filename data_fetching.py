@@ -128,7 +128,7 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
     start_date = pd.to_datetime(start_date)
     if series_map is None:
         series_map = {
-            # 'USD Overnight Rate': 'OBFR',
+            'OVX': 'OVXCLS',
             # '2Y Yield': 'DGS2',
             # 'FRED RRP': 'RRPONTSYD',
             'US Corp OAS': 'BAMLC0A0CM',
