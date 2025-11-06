@@ -206,15 +206,33 @@ def main():
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
 
-    # C1: robust orientation + freeze + audit
+
+    # freeze_after_days = 90
+    # stability_threshold = 0.8
+    # min_corr_to_freeze = 0.10
+    # allow_flip_cosine_thresh = 0.2
+
     fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
         fsi_series=fsi_series,
         omega_history=omega_history,
         df_engineered=df.loc[fsi_series.index],
         stability_series=cos_sim_series,
         stability_threshold=float(config['fsi']['stability_threshold']),
-        freeze_after_days=int(config['fsi'].get('freeze_after_days', 60))
+        freeze_after_days=int(config['fsi'].get('freeze_after_days', 90)),
+        min_corr_to_freeze=0.10,
+        allow_flip_cosine_thresh=0.2
     )
+
+
+    # # C1: robust orientation + freeze + audit
+    # fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
+    #     fsi_series=fsi_series,
+    #     omega_history=omega_history,
+    #     df_engineered=df.loc[fsi_series.index],
+    #     stability_series=cos_sim_series,
+    #     stability_threshold=float(config['fsi']['stability_threshold']),
+    #     freeze_after_days=int(config['fsi'].get('freeze_after_days', 60))
+    # )
 
     # Persist audit log
     base_path = "./cache-directory"
