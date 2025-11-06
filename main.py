@@ -14,7 +14,7 @@ from plotting import (
 )
 from utils import (
     aggregate_contributions_by_group, smooth_transition_regime, regime_from_smooth_weight, orient_fsi_and_omega,
-    moving_average_deviation, absolute_deviation_rotated, absolute_deviation,
+    moving_average_deviation, absolute_deviation_rotated, absolute_deviation, build_dynamic_group_map,
     classify_risk_regime_hybrid, kalman_impute, impute_data, classify_adaptive_regime
 )
 
@@ -233,14 +233,23 @@ def main():
     )
 
     # Group attribution (C2 dynamic map can replace this later)
-    group_map = {
-        "Volatility": ["VIX_dev_250", "MOVE_dev_250", "OVX_dev_250", "VIX3M_dev_250"],
-        "Rates": ["2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"],
-        "Funding": ["3M_TBill_stress_250", "EFFR_stress_250"],
-        "Credit": ["IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"],
-        "FX/Safe_Haven": ["Gold_dev_250", "USDJPY_dev_250", "USD_stress_250"],
-    }
+    # group_map = {
+    #     "Volatility": ["VIX_dev_250", "MOVE_dev_250", "OVX_dev_250", "VIX3M_dev_250"],
+    #     "Rates": ["2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"],
+    #     "Funding": ["3M_TBill_stress_250", "EFFR_stress_250"],
+    #     "Credit": ["IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"],
+    #     "FX/Safe_Haven": ["Gold_dev_250", "USDJPY_dev_250", "USD_stress_250"],
+    # }
+    # grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
+
+    group_map = build_dynamic_group_map(variable_contribs)  # build from actually PRESENT columns
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
+
+    # Check that grouped sum equals FSI within tolerance (floating error)
+    tol = 1e-8
+    err = (grouped_contribs.drop(columns=['FSI']).sum(axis=1) - grouped_contribs['FSI']).abs().max()
+    if pd.notna(err) and err > tol:
+        logging.warning(f"[ATTR] Group attribution mismatch max={err:.2e} (tolerance {tol:.1e}).")
 
     # Regime classification on oriented FSI
     fsi = variable_contribs['FSI']

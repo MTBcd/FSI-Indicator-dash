@@ -804,6 +804,55 @@ def average_time_in_regime(regime_series):
 ########################################################
 
 
+
+
+def build_dynamic_group_map(df, window_pref=("250","252","260","126","125","63")):
+    """
+    Build groups from PRESENT columns, preferring the largest available window suffix.
+    Returns a dict group -> [cols].
+    """
+    # Decide one preferred suffix that actually exists
+    suffixes = []
+    for c in df.columns:
+        parts = c.rsplit("_", 1)
+        if len(parts)==2 and parts[1].isdigit():
+            suffixes.append(parts[1])
+    suffix = next((s for s in window_pref if s in set(suffixes)), None)
+    suf = f"_{suffix}" if suffix else ""
+
+    # candidate columns per group (try both with/without suffix; we’ll filter to present)
+    candidates = {
+        "Volatility": [f"VIX_dev{suf}", f"MOVE_dev{suf}", f"OVX_dev{suf}", f"VIX3M_dev{suf}", f"VIX_VIX3M_spread_dev{suf}",
+                       "VIX_dev", "MOVE_dev", "OVX_dev", "VIX3M_dev", "VIX_VIX3M_spread_dev"],
+        "Rates": [f"2Y_rate{suf}", f"10Y_rate{suf}", f"10Y_3M_slope_dev{suf}",
+                  "2Y_rate", "10Y_rate", "10Y_3M_slope_dev"],
+        "Funding": [f"3M_TBill_stress{suf}", f"EFFR_stress{suf}", "3M_TBill_stress", "EFFR_stress"],
+        "Credit": [f"IG_OAS_dev{suf}", f"HY_OAS_dev{suf}", f"BBB_OAS_dev{suf}", f"HY_IG_spread{suf}",
+                   "IG_OAS_dev", "HY_OAS_dev", "BBB_OAS_dev", "HY_IG_spread"],
+        "FX/Safe_Haven": [f"Gold_dev{suf}", f"USDJPY_dev{suf}", f"USD_stress{suf}",
+                          "Gold_dev", "USDJPY_dev", "USD_stress"],
+    }
+    group_map = {}
+    present_cols = set(df.columns)
+    for g, opts in candidates.items():
+        cols = [c for c in opts if c in present_cols]
+        if cols:
+            # de-dup while preserving order
+            seen=set(); clean=[]
+            for c in cols:
+                if c not in seen:
+                    seen.add(c); clean.append(c)
+            group_map[g] = clean
+        else:
+            # leave group empty -> downstream will set to 0 if desired
+            group_map[g] = []
+    return group_map
+
+
+
+
+
+
 import logging
 
 def _pick_anchor_columns(df, pref_windows=("250","252","260","126","125","63")):
