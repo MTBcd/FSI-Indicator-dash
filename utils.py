@@ -864,6 +864,9 @@ def _pick_anchor_columns(df, pref_windows=("250","252","260","126","125","63")):
     base_opts = {
         "VIX_dev": ["VIX_dev"],
         "MOVE_dev": ["MOVE_dev"],
+        "10Y_rate": ["10Y_rate"],
+        "OVX_dev": ["OVX_dev"],
+        "Gold_dev": ["Gold_dev"],
         "HY_OAS_dev": ["HY_OAS_dev","US HY OAS_dev"],
         "IG_OAS_dev": ["IG_OAS_dev","US IG OAS_dev"]
     }
@@ -896,7 +899,7 @@ def _make_stress_proxy(df):
     priority_groups = [
         [c for c in df.columns if ("HY_OAS_dev" in c) or ("IG_OAS_dev" in c) or ("BBB_OAS_dev" in c)],
         [c for c in df.columns if ("VIX_dev" in c) or ("MOVE_dev" in c) or ("OVX_dev" in c)],
-        [c for c in df.columns if ("HY_IG_spread" in c) or ("USD_stress" in c)]
+        [c for c in df.columns if ("Gold_dev" in c) or ("USD_stress" in c)]
     ]
     for group in priority_groups:
         if group:
