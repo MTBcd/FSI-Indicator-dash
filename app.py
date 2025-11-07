@@ -566,7 +566,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
     # --- Load precomputed series/frames ---
     variable_contribs = pd.read_json(io.StringIO(data["variable_contribs"]), orient="split")
     grouped_contribs  = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
-    regimes_full      = pd.read_json(io.StringIO(data["regime_series"]), orient="split", typ="series").squeeze("columns")
+    regimes_full      = pd.read_json(io.StringIO(data["regime_series"]), orient="split", typ="series")
 
     # --- Date filtering (render-only, no computation) ---
     idx = variable_contribs.index
