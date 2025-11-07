@@ -100,17 +100,6 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1, regime_filter=Non
             opacity=1, layer="below", line_width=0, row=row, col=col
         )
 
-    for _, segment in df.groupby('RegimeShift'):
-        regime = segment['Regime'].iloc[0]
-        fig.add_vrect(
-            x0=segment.index[0], 
-            x1=segment.index[-1] + pd.Timedelta(days=1),
-            fillcolor=colors.get(regime, 'rgba(100,100,100,0.1)'),
-            opacity=1, layer="below",
-            line_width=0,
-            row=row, col=col
-        )
-
 
 
 def reindex_to_daily(series_or_df, fill_method="ffill"):

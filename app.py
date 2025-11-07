@@ -9,7 +9,7 @@ import io
 import diskcache
 import time
 import numpy as np
-
+import logging
   
 # --- Your framework imports ---
 from main import load_configuration, merge_data
@@ -22,7 +22,7 @@ from plotting import (
 )
 from utils import (
     aggregate_contributions_by_group,
-    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, 
+    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, build_dynamic_group_map, orient_fsi_and_omega,
     classify_risk_regime_hybrid, average_time_in_regime, classify_adaptive_regime_hybrid_fallback,
     compute_hhi_ranking
 )
@@ -350,67 +350,53 @@ def run_full_pipeline(n_clicks):
     if df is None:
         return dash.no_update, "❌ Data loading failed", False, ""
 
-    fsi_series, omega_history, _, _ = estimate_fsi_recursive_rolling_with_stability(
+
+#####
+
+    # capture stability series
+    fsi_series, omega_history, cos_sim_series, _ = estimate_fsi_recursive_rolling_with_stability(
         df,
         window_size=int(config['fsi']['window_size']),
         n_iter=int(config['fsi']['n_iter']),
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
 
-    # --- Enforce a consistent "stress is positive" orientation ---
-    anchor_vars_pref = ['VIX_dev_250', 'MOVE_dev_250', 'HY_OAS_dev_250', 'IG_OAS_dev_250']
-    anchors = [c for c in anchor_vars_pref if c in df.columns]
+    # ✅ robust C1 orientation (same as main.py)
+    fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
+        fsi_series=fsi_series,
+        omega_history=omega_history,
+        df_engineered=df.loc[fsi_series.index],
+        stability_series=cos_sim_series,
+        stability_threshold=float(config['fsi']['stability_threshold']),
+        freeze_after_days=int(config['fsi'].get('freeze_after_days', 90)),
+        min_corr_to_freeze=0.10,
+        allow_flip_cosine_thresh=0.2
+    )
 
-    if anchors:
-        # Option A: use weights sign on anchors at the most recent date
-        anchor_sign = np.sign(omega_history[anchors].iloc[-1].mean())
-        if anchor_sign < 0:
-            fsi_series *= -1
-            omega_history *= -1
-    else:
-        # Option B (fallback): use correlation with an easy stress proxy if present
-        proxy_candidates = [c for c in ['VIX_dev_250', 'HY_OAS_dev_250'] if c in df.columns]
-        if proxy_candidates:
-            proxy = df[proxy_candidates].mean(axis=1)
-            aligned = pd.concat([fsi_series, proxy], axis=1).dropna()
-            if not aligned.empty and aligned.corr().iloc[0,1] < 0:  # corr(FSI, proxy) < 0 ⇒ flip
-                fsi_series *= -1
-                omega_history *= -1
-    # --- end orientation ---
+    # (optional) persist the audit in cache dir
+    base_path = "./cache-directory"
+    os.makedirs(os.path.join(base_path, "qc"), exist_ok=True)
+    orient_audit.to_csv(os.path.join(base_path, "qc", "orientation_flip_audit_app.csv"), index=False)
 
-    # latest_omega = omega_history.iloc[-1]
-    # variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
-
+    # leakage-free contributions (A1)
     variable_contribs = compute_timevarying_contributions(
-        df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size']))
+        df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
+    )
 
-    group_map = {
-        "Volatility": [
-            "VIX_dev_250", "MOVE_dev_250", "OVX_dev_250",
-            "VIX3M_dev_250", "VIX_VIX3M_spread_dev_250"  # if engineered
-        ],
-        "Rates": [
-            "2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"
-        ],
-        "Funding": [
-            "3M_TBill_stress_250", "EFFR_stress_250" # include USD only if DXY fetched , "EFFR_VOLUME_250"
-        ],
-        "Credit": [
-            "IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"
-        ],
-        "FX/Safe_Haven": [
-            "Gold_dev_250", "USDJPY_dev_250", "USD_stress_250" 
-        ],
-    }
+    # ✅ dynamic map consistent with engineered features
+    group_map = build_dynamic_group_map(variable_contribs)
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
+
+    # tiny safety check
+    err = (grouped_contribs.drop(columns=['FSI']).sum(axis=1) - variable_contribs['FSI']).abs().max()
+    if pd.notna(err) and err > 1e-8:
+        logging.warning(f"[ATTR] Group attribution mismatch max={err:.2e}")
+
+    # regimes (keep your chosen classifier)
     regimes_full = classify_adaptive_regime_hybrid_fallback(variable_contribs['FSI'], quantile_window=1260)
-    # regimes_full = classify_risk_regime_hybrid(variable_contribs['FSI'])
 
     df_aligned = df.loc[fsi_series.index].copy()
     df_aligned["Regime"] = regimes_full.astype(str)
-
-    print("First 10 regimes:", df_aligned["Regime"].head(10).tolist())
-    print("Regime counts:", df_aligned["Regime"].value_counts())
 
     result = {
         "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
@@ -423,6 +409,85 @@ def run_full_pipeline(n_clicks):
     msg = f"✅ Analysis completed and cached at {result['timestamp']}"
     timestamp_label = f"Last update: {result['timestamp']}"
     return result, msg, False, timestamp_label
+
+#####
+
+
+
+
+    # fsi_series, omega_history, _, _ = estimate_fsi_recursive_rolling_with_stability(
+    #     df,
+    #     window_size=int(config['fsi']['window_size']),
+    #     n_iter=int(config['fsi']['n_iter']),
+    #     stability_threshold=float(config['fsi']['stability_threshold'])
+    # )
+
+    # # --- Enforce a consistent "stress is positive" orientation ---
+    # anchor_vars_pref = ['VIX_dev_250', 'MOVE_dev_250', 'HY_OAS_dev_250', 'IG_OAS_dev_250']
+    # anchors = [c for c in anchor_vars_pref if c in df.columns]
+
+    # if anchors:
+    #     # Option A: use weights sign on anchors at the most recent date
+    #     anchor_sign = np.sign(omega_history[anchors].iloc[-1].mean())
+    #     if anchor_sign < 0:
+    #         fsi_series *= -1
+    #         omega_history *= -1
+    # else:
+    #     # Option B (fallback): use correlation with an easy stress proxy if present
+    #     proxy_candidates = [c for c in ['VIX_dev_250', 'HY_OAS_dev_250'] if c in df.columns]
+    #     if proxy_candidates:
+    #         proxy = df[proxy_candidates].mean(axis=1)
+    #         aligned = pd.concat([fsi_series, proxy], axis=1).dropna()
+    #         if not aligned.empty and aligned.corr().iloc[0,1] < 0:  # corr(FSI, proxy) < 0 ⇒ flip
+    #             fsi_series *= -1
+    #             omega_history *= -1
+    # # --- end orientation ---
+
+    # # latest_omega = omega_history.iloc[-1]
+    # # variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
+
+    # variable_contribs = compute_timevarying_contributions(
+    #     df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size']))
+
+    # group_map = {
+    #     "Volatility": [
+    #         "VIX_dev_250", "MOVE_dev_250", "OVX_dev_250",
+    #         "VIX3M_dev_250", "VIX_VIX3M_spread_dev_250"  # if engineered
+    #     ],
+    #     "Rates": [
+    #         "2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"
+    #     ],
+    #     "Funding": [
+    #         "3M_TBill_stress_250", "EFFR_stress_250" # include USD only if DXY fetched , "EFFR_VOLUME_250"
+    #     ],
+    #     "Credit": [
+    #         "IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"
+    #     ],
+    #     "FX/Safe_Haven": [
+    #         "Gold_dev_250", "USDJPY_dev_250", "USD_stress_250" 
+    #     ],
+    # }
+    # grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
+    # regimes_full = classify_adaptive_regime_hybrid_fallback(variable_contribs['FSI'], quantile_window=1260)
+    # # regimes_full = classify_risk_regime_hybrid(variable_contribs['FSI'])
+
+    # df_aligned = df.loc[fsi_series.index].copy()
+    # df_aligned["Regime"] = regimes_full.astype(str)
+
+    # print("First 10 regimes:", df_aligned["Regime"].head(10).tolist())
+    # print("Regime counts:", df_aligned["Regime"].value_counts())
+
+    # result = {
+    #     "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
+    #     "variable_contribs": variable_contribs.to_json(date_format="iso", orient="split"),
+    #     "grouped_contribs": grouped_contribs.to_json(date_format="iso", orient="split"),
+    #     "df": df_aligned.to_json(date_format="iso", orient="split"),
+    #     "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+    # }
+    # cache.set(cache_key, result, expire=3600)
+    # msg = f"✅ Analysis completed and cached at {result['timestamp']}"
+    # timestamp_label = f"Last update: {result['timestamp']}"
+    # return result, msg, False, timestamp_label
 
 # --- 2. Update Main Charts/Stats When Data Is Available ---
 @app.callback(
