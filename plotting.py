@@ -75,7 +75,7 @@ def add_event_annotations(fig, events_dict, event_heights=None):
             borderpad=4,
         )
 
-def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
+def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1, regime_filter=None):
     """Add regime-based colored ribbons to the plot."""
     df = pd.DataFrame({'FSI': fsi_series, 'Regime': regimes})
     df['RegimeShift'] = (df['Regime'] != df['Regime'].shift()).cumsum()
@@ -85,6 +85,21 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1):
         'Amber': 'rgba(255, 165, 0, 0.3)',
         'Red': 'rgba(255, 0, 0, 0.3)'
     }
+
+    # NEW: filter which regimes to draw
+    allowed = set(regime_filter) if regime_filter else set(colors.keys())
+
+    for _, seg in df.groupby('RegimeShift'):
+        regime = seg['Regime'].iloc[0]
+        if regime not in allowed:
+            continue
+        fig.add_vrect(
+            x0=seg.index[0],
+            x1=seg.index[-1] + pd.Timedelta(days=1),
+            fillcolor=colors.get(regime, 'rgba(100,100,100,0.1)'),
+            opacity=1, layer="below", line_width=0, row=row, col=col
+        )
+
     for _, segment in df.groupby('RegimeShift'):
         regime = segment['Regime'].iloc[0]
         fig.add_vrect(
@@ -131,7 +146,8 @@ def _pick_fsi_for_ribbons(contribs_by_group, fsi_for_ribbons):
     else:
         return contribs_by_group['FSI']
 
-def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
+
+def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime_filter=None):
     """Plot variable-level contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
@@ -173,7 +189,7 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
 
         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
 
-        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, regime_filter=regime_filter)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
         # Year markers
@@ -225,7 +241,7 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None):
         return None
 
 
-def plot_grouped_contributions(contribs_by_group, regimes=None):
+def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=None):
     """Plot grouped contributions to the FSI with regime ribbons (no proximity subplot)."""
     try:
         contribs_by_group.index = pd.to_datetime(contribs_by_group.index)
@@ -267,7 +283,7 @@ def plot_grouped_contributions(contribs_by_group, regimes=None):
 
         fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
 
-        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+        add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, regime_filter=regime_filter)
         add_event_annotations(fig, market_events, event_heights=event_heights)
 
         # Year markers

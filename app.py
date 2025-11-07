@@ -110,6 +110,14 @@ app.layout = html.Div([
                         value=['show'],
                         style={'marginBottom': '12px'}
                     ),
+                    html.Label("Shade regimes:"),
+                    dcc.Checklist(
+                        id='ribbon-filter',
+                        options=[{'label': r, 'value': r} for r in ['Green','Yellow','Amber','Red']],
+                        value=['Amber','Red'],  # default: risk-only
+                        inline=True,
+                        style={'marginBottom': '12px'}
+                    ),
                     dcc.Graph(id='fig1'),
                     html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
                 ], style={"margin-bottom": "10px"}),
@@ -435,11 +443,12 @@ def run_full_pipeline(n_clicks):
         Input('fsi-store', 'data'),
         Input('fsi-date-range', 'start_date'),
         Input('fsi-date-range', 'end_date'),
-        Input('fsi-yaxis-ticks', 'value')
+        Input('fsi-yaxis-ticks', 'value'),
+        Input('ribbon-filter','value')
     ]
 )
 
-def update_all_from_store(data, start_date, end_date, ytick_opts):
+def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter):
     if data is None:
         raise dash.exceptions.PreventUpdate
 
@@ -468,8 +477,11 @@ def update_all_from_store(data, start_date, end_date, ytick_opts):
     regimes_filtered = regimes_full.reindex(idx)
 
     # --- Pass regimes to plotting (so ribbons don’t change) ---
-    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered)
-    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_filtered)
+    # fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered)
+    # fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_filtered)
+
+    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter)
+    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter)
 
     # --- Y-Axis Tick Visibility ---
     show_ticks = 'show' in (ytick_opts or [])
