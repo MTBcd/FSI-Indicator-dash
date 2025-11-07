@@ -332,28 +332,28 @@ app.layout = html.Div([
     Input('run-btn', 'n_clicks'),
     prevent_initial_call=True
 )
+
 def run_full_pipeline(n_clicks):
     import time
 
-    # cache_key = "fsi_analysis_latest"
     cache_key = "fsi_analysis_latest_hybrid_v2"
     msg = "⏳ Analysis running, please wait..."
     timestamp_label = ""
+
+    # Serve from cache if present
     result = cache.get(cache_key)
     if result is not None:
         msg = f"✅ Served from cache (last computed at {result.get('timestamp', 'unknown')})"
         timestamp_label = f"Last update: {result.get('timestamp', 'unknown')}"
         return result, msg, False, timestamp_label
 
+    # --- Load & merge data ---
     config = load_configuration()
     df = merge_data(config)
-    if df is None:
+    if df is None or df.empty:
         return dash.no_update, "❌ Data loading failed", False, ""
 
-
-#####
-
-    # capture stability series
+    # --- Estimate FSI & ω with stability diagnostics (no leakage) ---
     fsi_series, omega_history, cos_sim_series, _ = estimate_fsi_recursive_rolling_with_stability(
         df,
         window_size=int(config['fsi']['window_size']),
@@ -361,7 +361,7 @@ def run_full_pipeline(n_clicks):
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
 
-    # ✅ robust C1 orientation (same as main.py)
+    # --- C1: robust orientation + freeze + audit (already implemented in utils) ---
     fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
         fsi_series=fsi_series,
         omega_history=omega_history,
@@ -373,38 +373,84 @@ def run_full_pipeline(n_clicks):
         allow_flip_cosine_thresh=0.2
     )
 
-    # (optional) persist the audit in cache dir
+    # Persist orientation audit (optional)
     base_path = "./cache-directory"
     os.makedirs(os.path.join(base_path, "qc"), exist_ok=True)
-    orient_audit.to_csv(os.path.join(base_path, "qc", "orientation_flip_audit_app.csv"), index=False)
+    try:
+        orient_audit.to_csv(os.path.join(base_path, "qc", "orientation_flip_audit_app.csv"), index=False)
+    except Exception:
+        pass
 
-    # leakage-free contributions (A1)
+    # --- A1: leakage-free time-varying contributions using contemporaneous ω_t ---
     variable_contribs = compute_timevarying_contributions(
         df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
     )
 
-    # ✅ dynamic map consistent with engineered features
+    # --- C2: dynamic group mapping from present columns ---
     group_map = build_dynamic_group_map(variable_contribs)
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
 
-    # tiny safety check
-    err = (grouped_contribs.drop(columns=['FSI']).sum(axis=1) - variable_contribs['FSI']).abs().max()
-    if pd.notna(err) and err > 1e-8:
-        logging.warning(f"[ATTR] Group attribution mismatch max={err:.2e}")
+    # Small attribution sanity check
+    try:
+        err = (grouped_contribs.drop(columns=['FSI']).sum(axis=1) - variable_contribs['FSI']).abs().max()
+        if pd.notna(err) and err > 1e-8:
+            logging.warning(f"[ATTR] Group attribution mismatch max={err:.2e}")
+    except Exception:
+        pass
 
-    # regimes (keep your chosen classifier)
+    # --- Regime classification (fixed, not recomputed on UI tweaks) ---
     regimes_full = classify_adaptive_regime_hybrid_fallback(variable_contribs['FSI'], quantile_window=1260)
 
+    # Align DF and attach regimes (for any lightweight displays later)
     df_aligned = df.loc[fsi_series.index].copy()
     df_aligned["Regime"] = regimes_full.astype(str)
 
+    # =======================
+    # Precompute ALL heavy stuff here (one time per refresh)
+    # =======================
+    # 1) HMM regime today
+    hmm_state, _, _ = run_hmm(
+        df_aligned, n_states=4,
+        columns=[c for c in df_aligned.columns if ('FSI' in c or 'dev' in c or 'stress' in c or 'OAS' in c)]
+    )
+    hmm_regime_map = {0: "Green", 1: "Yellow", 2: "Amber", 3: "Red"}
+    hmm_regime_today = hmm_regime_map.get(hmm_state, f"Unknown ({hmm_state})")
+
+    # 2) Forward-looking probabilities (logit & XGB) with purged CV
+    prob_logit, _, _, _, auc_logit = predict_regime_probability(
+        df_aligned, model_type='logit', lookahead=20, n_splits=5, use_purged=True, embargo=20)
+    prob_xgb, _, _, _, auc_xgb = predict_regime_probability(
+        df_aligned, model_type='xgboost', lookahead=20, n_splits=5, use_purged=True, embargo=20)
+
+    # 3) Transition matrix & average time in regime
+    tm_df = compute_transition_matrix(df_aligned['Regime'])
+    avg_time_series = average_time_in_regime(df_aligned['Regime'])
+
+    # =======================
+    # Pack everything for the UI (render-only later)
+    # =======================
     result = {
+        # time series
         "fsi_series": fsi_series.to_json(date_format="iso", orient="split"),
         "variable_contribs": variable_contribs.to_json(date_format="iso", orient="split"),
         "grouped_contribs": grouped_contribs.to_json(date_format="iso", orient="split"),
         "df": df_aligned.to_json(date_format="iso", orient="split"),
+        "regime_series": regimes_full.astype(str).to_json(date_format="iso", orient="split"),
+
+        # heavy precomputations for static display
+        "hmm_state_today": int(hmm_state),
+        "hmm_regime_today": hmm_regime_today,
+        "prob_red_logit": float(prob_logit),
+        "auc_logit": float(auc_logit),
+        "prob_red_xgb": float(prob_xgb),
+        "auc_xgb": float(auc_xgb),
+        "transition_matrix": tm_df.to_dict(),          # rows: FROM, cols: TO
+        "avg_time_in_regime": avg_time_series.to_dict(),
+
+        # housekeeping
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
     }
+
     cache.set(cache_key, result, expire=3600)
     msg = f"✅ Analysis completed and cached at {result['timestamp']}"
     timestamp_label = f"Last update: {result['timestamp']}"
@@ -517,62 +563,47 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
     if data is None:
         raise dash.exceptions.PreventUpdate
 
+    # --- Load precomputed series/frames ---
     variable_contribs = pd.read_json(io.StringIO(data["variable_contribs"]), orient="split")
     grouped_contribs  = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
-    df_all            = pd.read_json(io.StringIO(data["df"]), orient="split")  # contains 'Regime'
+    regimes_full      = pd.read_json(io.StringIO(data["regime_series"]), orient="split").squeeze("columns")
 
-    # --- USE PRECOMPUTED REGIMES (STATIC) ---
-    regimes_full = df_all["Regime"].astype(str)
-
-    # --- FILTER by selected date ---
-    df_filtered = df_all.copy()
+    # --- Date filtering (render-only, no computation) ---
+    idx = variable_contribs.index
     if start_date:
-        sd = pd.to_datetime(start_date)
-        df_filtered = df_filtered[df_filtered.index >= sd]
+        idx = idx[idx >= pd.to_datetime(start_date)]
     if end_date:
-        ed = pd.to_datetime(end_date)
-        df_filtered = df_filtered[df_filtered.index <= ed]
+        idx = idx[idx <= pd.to_datetime(end_date)]
 
-    # Make all inputs share the same index (NO label leakage)
-    idx = df_filtered.index
-    variable_contribs = variable_contribs.reindex(idx)  # numeric data can be NaN, it's fine
+    variable_contribs = variable_contribs.reindex(idx)
     grouped_contribs  = grouped_contribs.reindex(idx)
+    regimes_filtered  = regimes_full.reindex(idx)
 
-    # Use the already-computed labels, just realigned; DO NOT fill across slice edges
-    regimes_filtered = regimes_full.reindex(idx)
+    # --- Build figures (no training here) ---
+    fig1 = plot_group_contributions_with_regime(
+        variable_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter
+    )
+    fig2 = plot_grouped_contributions(
+        grouped_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter
+    )
 
-    # --- Pass regimes to plotting (so ribbons don’t change) ---
-    # fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered)
-    # fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_filtered)
-
-    fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter)
-    fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter)
-
-    # --- Y-Axis Tick Visibility ---
+    # Y-axis ticks visibility toggle
     show_ticks = 'show' in (ytick_opts or [])
     fig1.update_yaxes(showticklabels=show_ticks)
     fig2.update_yaxes(showticklabels=show_ticks)
 
-    curr_regime = get_current_regime(df_all)
+    # Current regime = last of precomputed regimes
+    curr_regime = regimes_full.iloc[-1]
     curr_regime_html = regime_color_text(curr_regime)
 
-    # --- Improved: Map HMM state to regime color ---
-    hmm_state, _, hmm_states_series = run_hmm(
-        df_all, n_states=4,
-        columns=[c for c in df_all.columns if 'FSI' in c or 'dev' in c or 'stress' in c or 'OAS' in c]
-    )
+    # HMM regime (precomputed)
+    hmm_regime_html = regime_color_text(data.get("hmm_regime_today", "Unknown"))
 
-    def hmm_state_to_regime(state):
-        mapping = {0: "Green", 1: "Yellow", 2: "Amber", 3: "Red"}
-        return mapping.get(state, f"Unknown ({state})")
-
-    hmm_regime = hmm_state_to_regime(hmm_state)
-    hmm_regime_html = regime_color_text(hmm_regime)
-
+    # Gauges (precomputed AUC & probabilities)
     def make_prob_gauge(prob, label):
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
-            value=prob * 100,
+            value=float(prob) * 100.0,
             domain={'x': [0, 1], 'y': [0, 1]},
             title={'text': label, "font": {"size": 13}, "align": "center"},
             gauge={
@@ -586,76 +617,53 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
             },
             number={'suffix': "%"}
         ))
-        fig.update_layout(
-            margin=dict(l=10, r=10, t=45, b=14),
-            paper_bgcolor="#f7f8fa",
-            height=210
-        )
+        fig.update_layout(margin=dict(l=10, r=10, t=45, b=14), paper_bgcolor="#f7f8fa", height=210)
         return fig
 
+    fig_prob_logit = make_prob_gauge(
+        data["prob_red_logit"],
+        f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
+    )
+    fig_prob_xgb = make_prob_gauge(
+        data["prob_red_xgb"],
+        f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
+    )
 
-    prob_logit, _, _, _, score_logit = predict_regime_probability(
-        df_all, model_type='logit', lookahead=20, n_splits=5, use_purged=True, embargo=20)
-    prob_xgb, _, _, _, score_xgb = predict_regime_probability(
-        df_all, model_type='xgboost', lookahead=20, n_splits=5, use_purged=True, embargo=20)
+    # --- Transition matrix (precomputed) ---
+    tm = pd.DataFrame(data["transition_matrix"]).fillna(0.0)
+    regimes_order = ["Green", "Yellow", "Amber", "Red"]
+    tm = tm.reindex(index=regimes_order, columns=regimes_order, fill_value=0.0)
 
-    # prob_logit, _, _, _, score_logit = predict_regime_probability(df_all, model_type='logit', lookahead=20)
-    # prob_xgb, _, _, _, score_xgb = predict_regime_probability(df_all, model_type='xgboost', lookahead=20)
-
-    fig_prob_logit = make_prob_gauge(prob_logit, f"Logit P(Red) (AUC: {score_logit:.2f})")
-    fig_prob_xgb = make_prob_gauge(prob_xgb, f"XGBoost P(Red) (AUC: {score_xgb:.2f})")
-
-    regime_series = df_all['Regime'].astype(str).fillna("NA").reset_index(drop=True)
-
-    valid_idx = regime_series != "NA"
-    regime_series = regime_series[valid_idx]
-    if regime_series.nunique() < 2:
+    if (tm.values.sum() == 0) or (tm.shape != (4, 4)):
         fig_matrix = go.Figure()
         fig_matrix.update_layout(
-            title="Only one regime found in data (no regime changes).",
+            title="Transition matrix unavailable for this sample.",
             plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa",
             xaxis_visible=False, yaxis_visible=False
         )
     else:
-        matrix = compute_transition_matrix(regime_series)
-        regimes = list(REGIME_COLORS.keys())
-        matrix = matrix.reindex(index=regimes, columns=regimes, fill_value=0)
-        off_diag = matrix.values.copy()
-        np.fill_diagonal(off_diag, 0)
-        off_diag_sum = off_diag.sum()
-        if off_diag_sum < 1e-8:
-            fig_matrix = go.Figure()
-            fig_matrix.update_layout(
-                title="Only self-transitions detected (no regime changes in sample).",
-                plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa",
-                xaxis_visible=False, yaxis_visible=False
-            )
-        else:
-            z = matrix.values
-            x = list(matrix.columns)
-            y = list(matrix.index)
-            hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
-            fig_matrix = go.Figure(data=go.Heatmap(
-                z=z,
-                x=x,
-                y=y,
-                colorscale='RdYlGn',
-                reversescale=True,
-                hoverinfo='text',
-                text=hovertext,
-                zmin=0, zmax=1,
-                colorbar=dict(title="Prob.")
-            ))
-            fig_matrix.update_layout(
-                title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b><br>",
-                xaxis_title="To Regime",
-                yaxis_title="From Regime",
-                margin=dict(l=25, r=25, t=45, b=40),
-                font=dict(size=12),
-                plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
-            )
+        z = tm.values
+        x = list(tm.columns)
+        y = list(tm.index)
+        hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
+        fig_matrix = go.Figure(data=go.Heatmap(
+            z=z, x=x, y=y,
+            colorscale='RdYlGn', reversescale=True,
+            hoverinfo='text', text=hovertext, zmin=0, zmax=1,
+            colorbar=dict(title="Prob.")
+        ))
+        fig_matrix.update_layout(
+            title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b><br>",
+            xaxis_title="To Regime", yaxis_title="From Regime",
+            margin=dict(l=25, r=25, t=45, b=40),
+            font=dict(size=12),
+            plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
+        )
 
-    avg_time = average_time_in_regime(regime_series)
+    # --- Average time in regime (precomputed) ---
+    avg_time = data.get("avg_time_in_regime", {})
+    def cell(reg): return f"{float(avg_time.get(reg, 0.0)):.1f}"
+
     avg_time_table = html.Div([
         html.Div([
             html.Span("The average time spent in regime is measured in number of days.", style={
@@ -673,16 +681,16 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
                         "fontWeight": "bold",
                         "fontSize": "1.09em",
                         "borderRadius": "7px 7px 0 0"
-                    }) for reg in ["Green", "Yellow", "Amber", "Red"]
+                    }) for reg in regimes_order
                 ])
             ),
             html.Tbody([
                 html.Tr([
-                    html.Td(f"{avg_time.get(reg, 0):.1f}", style={
+                    html.Td(cell(reg), style={
                         "padding": "8px 18px",
                         "fontWeight": "500",
                         "fontSize": "1.09em"
-                    }) for reg in ["Green", "Yellow", "Amber", "Red"]
+                    }) for reg in regimes_order
                 ])
             ])
         ], style={
@@ -697,29 +705,24 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
         })
     ], style={"marginTop": "15px", "marginBottom": "20px"})
 
-    # --- HHI over last 20 rows of VARIABLE-LEVEL contributions in the filtered slice ---
-    # variable_contribs currently matches `idx` (filtered by date above).
+    # --- HHI over last 20 rows (cheap; keep dynamic for selected window) ---
     hhi, eff_n, ranking = compute_hhi_ranking(variable_contribs, window=20)
-
-    # Bar chart of top contributors (shares already sorted desc)
     fig_hhi = plot_hhi_bar(ranking, top_n=15, title_suffix="(last 20 days)")
-
-    # Small metrics line
     if np.isnan(hhi):
         hhi_text = "HHI unavailable for the selected range."
     else:
         hhi_text = (f"HHI = <b>{hhi:.3f}</b>  |  "
-                    f"Effective number of contributors ≈ <b>{eff_n:.1f}</b> "
-                    f"(= 1/HHI)")
+                    f"Effective number of contributors ≈ <b>{eff_n:.1f}</b> (= 1/HHI)")
 
-    # Data for the ranking table (top 20)
+    # Table for top contributors
     table_data = []
     if ranking is not None and not ranking.empty:
         top = ranking.head(20) * 100.0
         table_data = [{"Variable": k, "Share": f"{v:.2f}%"} for k, v in top.items()]
 
-    return fig1, fig2, curr_regime_html, hmm_regime_html, fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table, fig_hhi, hhi_text, table_data
-
+    return (fig1, fig2, curr_regime_html, hmm_regime_html,
+            fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table,
+            fig_hhi, hhi_text, table_data)
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
 @app.callback(

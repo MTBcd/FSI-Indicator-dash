@@ -118,10 +118,10 @@ def merge_data(config, max_age_hours=0):
                 df[f'OVX_dev_{window}'] = moving_average_deviation(df['OVX'], window)
             if 'VIX3M' in df.columns:
                 df[f'VIX3M_dev_{window}'] = moving_average_deviation(df['VIX3M'], window)
-                if 'VIX' in df.columns:
-                    # backwardation (VIX > VIX3M) ⇒ more stress
-                    spread = (df['VIX'] - df['VIX3M']).rename('VIX_minus_VIX3M')
-                    df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(spread, window)
+                # if 'VIX' in df.columns:
+                #     # backwardation (VIX > VIX3M) ⇒ more stress
+                #     spread = (df['VIX'] - df['VIX3M']).rename('VIX_minus_VIX3M')
+                #     df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(spread, window)
 
             # --- FX / Safe Haven ---
             if 'Gold Price' in df.columns:
@@ -139,9 +139,9 @@ def merge_data(config, max_age_hours=0):
             if '10Y Yield' in df.columns:
                 ma10 = df['10Y Yield'].rolling(window).mean()
                 df[f'10Y_rate_stress_{window}'] = (df['10Y Yield'] - ma10).abs()
-            if '2Y Yield' in df.columns:
-                ma2 = df['2Y Yield'].rolling(window).mean()
-                df[f'2Y_rate_stress_{window}'] = (df['2Y Yield'] - ma2).abs()
+            # if '2Y Yield' in df.columns:
+            #     ma2 = df['2Y Yield'].rolling(window).mean()
+            #     df[f'2Y_rate_stress_{window}'] = (df['2Y Yield'] - ma2).abs()
 
             # 2) Front-end jumps (funding pressures): only upside contributes
             if '3M T-Bill' in df.columns:
