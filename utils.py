@@ -665,38 +665,45 @@ import logging
 
 def _pick_anchor_columns(df, pref_windows=("250","252","260","126","125","63")):
     """
-    Return best-available engineered anchors in the form actually present.
+    Return best-available engineered anchors that are *present* in df.
     Preference: longer windows first.
     """
-    # base logical anchors, without window suffix
     base_opts = {
+        # volatility
         "VIX_dev": ["VIX_dev"],
         "MOVE_dev": ["MOVE_dev"],
+        "OVX_dev": ["OVX_dev"],
+        "VIX3M_dev": ["VIX3M_dev"],
+        # rates (your current names use *_dev and *_inversion_dev)
         "10Y_rate_dev": ["10Y_rate_dev"],
         "10Y_3M_inversion_dev": ["10Y_3M_inversion_dev"],
-        "OVX_dev": ["OVX_dev"],
-        "Gold_dev": ["Gold_dev"],
+        # credit
         "HY_OAS_dev": ["HY_OAS_dev","US HY OAS_dev"],
-        "IG_OAS_dev": ["IG_OAS_dev","US IG OAS_dev"]
+        "IG_OAS_dev": ["IG_OAS_dev","US IG OAS_dev"],
+        "BBB_OAS_dev": ["BBB_OAS_dev","US BBB OAS_dev"],
+        # FX / safe haven + funding
+        "Gold_dev": ["Gold_dev"],
+        "USD_stress": ["USD_stress"],
+        "USDJPY_dev": ["USDJPY_dev"],
+        "EFFR_stress": ["EFFR_stress"],
+        "3M_TBill_stress": ["3M_TBill_stress"],
+        "HY_IG_spread": ["HY_IG_spread"]
     }
+    # gather available window suffixes
+    suffixes = {c.rsplit("_",1)[1] for c in df.columns if "_" in c and c.rsplit("_",1)[1].isdigit()}
+    ordered_suffixes = [s for s in pref_windows if s in suffixes]
+
     present = []
-    # find suffixes present (e.g., "250")
-    suffixes = []
-    for c in df.columns:
-        parts = c.rsplit("_", 1)
-        if len(parts)==2 and parts[1].isdigit():
-            suffixes.append(parts[1])
-    # prefer longer windows
-    ordered_suffixes = [s for s in pref_windows if s in set(suffixes)]
     for s in ordered_suffixes:
-        for family, stems in base_opts.items():
+        for _, stems in base_opts.items():
             for stem in stems:
                 col = f"{stem}_{s}"
                 if col in df.columns:
                     present.append(col)
-        if present:  # once we collected any with this suffix, use them
+        if present:
             break
     return present
+
 
 def _make_stress_proxy(df):
     """
