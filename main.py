@@ -138,7 +138,7 @@ def merge_data(config, max_age_hours=0):
             # 1) Big absolute moves in yields are stress
             if '10Y Yield' in df.columns:
                 ma10 = df['10Y Yield'].rolling(window).mean()
-                df[f'10Y_rate_stress_{window}'] = (df['10Y Yield'] - ma10).abs()
+                df[f'10Y_rate_dev_{window}'] = (df['10Y Yield'] - ma10).abs()
             # if '2Y Yield' in df.columns:
             #     ma2 = df['2Y Yield'].rolling(window).mean()
             #     df[f'2Y_rate_stress_{window}'] = (df['2Y Yield'] - ma2).abs()
@@ -153,7 +153,7 @@ def merge_data(config, max_age_hours=0):
             if '10Y-3M Slope' in df.columns:
                 ma_slope = df['10Y-3M Slope'].rolling(window).mean()
                 slope_dev = df['10Y-3M Slope'] - ma_slope
-                df[f'10Y_3M_inversion_stress_{window}'] = (-slope_dev).clip(lower=0)
+                df[f'10Y_3M_inversion_dev_{window}'] = (-slope_dev).clip(lower=0)
 
             # --- Funding (policy/overnight) ---
             if 'EFFR' in df.columns:
@@ -295,16 +295,17 @@ def main():
         allow_flip_cosine_thresh=0.2
     )
 
+    # after obtaining fsi_series, omega_history we chack the correlation 
+    W = int(config['fsi']['window_size'])
+    idx_tail = fsi_series.index[-60:]
+    mu = df.rolling(W).mean().reindex(idx_tail)
+    sd = df.rolling(W).std().replace(0, np.nan).reindex(idx_tail)
+    Z = (df.reindex(idx_tail) - mu) / sd
 
-    # # C1: robust orientation + freeze + audit
-    # fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
-    #     fsi_series=fsi_series,
-    #     omega_history=omega_history,
-    #     df_engineered=df.loc[fsi_series.index],
-    #     stability_series=cos_sim_series,
-    #     stability_threshold=float(config['fsi']['stability_threshold']),
-    #     freeze_after_days=int(config['fsi'].get('freeze_after_days', 60))
-    # )
+    common = omega_history.columns.intersection(Z.columns)
+    approx_fsi = (Z[common] * omega_history.reindex(idx_tail)[common]).sum(axis=1)
+    corr = approx_fsi.corr(fsi_series.reindex(idx_tail))
+    logging.info(f"[QC] Corr(FSI, Σ z⊙ω) last 60d = {corr:.3f}")
 
     # Persist audit log
     base_path = "./cache-directory"
@@ -321,16 +322,6 @@ def main():
     variable_contribs = compute_timevarying_contributions(
         df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
     )
-
-    # Group attribution (C2 dynamic map can replace this later)
-    # group_map = {
-    #     "Volatility": ["VIX_dev_250", "MOVE_dev_250", "OVX_dev_250", "VIX3M_dev_250"],
-    #     "Rates": ["2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"],
-    #     "Funding": ["3M_TBill_stress_250", "EFFR_stress_250"],
-    #     "Credit": ["IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"],
-    #     "FX/Safe_Haven": ["Gold_dev_250", "USDJPY_dev_250", "USD_stress_250"],
-    # }
-    # grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
 
     group_map = build_dynamic_group_map(variable_contribs)  # build from actually PRESENT columns
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
@@ -367,99 +358,3 @@ if __name__ == '__main__':
 
 
 
-
-
-
-# def main():
-#     """Main function to orchestrate the FSI estimation and plotting."""
-#     config = load_configuration()
-#     df = merge_data(config)
-#     if df is None:
-#         logging.error("Failed to merge data. Exiting.")
-#         return
-
-#     fsi_series, omega_history, cos_sim_series, unstable_dates = estimate_fsi_recursive_rolling_with_stability(
-#         df,
-#         window_size=int(config['fsi']['window_size']),
-#         n_iter=int(config['fsi']['n_iter']),
-#         stability_threshold=float(config['fsi']['stability_threshold'])
-#     )
-
-#     # Broader anchor set with known positive relation to stress
-#     anchor_vars = ['VIX_dev_250', 'MOVE_dev_250', 'HY_OAS_dev_250', 'IG_OAS_dev_250']
-
-#     # Check if these exist in omega
-#     available_anchors = [col for col in anchor_vars if col in omega_history.columns]
-
-#     # Average their weights
-#     anchor_sign = np.sign(omega_history.iloc[-1][available_anchors].mean())
-
-#     # Flip if they're collectively negative
-#     if anchor_sign < 0:
-#         fsi_series *= -1
-#         omega_history *= -1
-
-#     # === ω Stability Diagnostics ===
-#     if unstable_dates:
-#         logging.warning(f"Detected unstable ω estimates on {len(unstable_dates)} days:")
-#         for date in unstable_dates:
-#             logging.warning(f" - {date.strftime('%Y-%m-%d')} (cos_sim = {cos_sim_series.loc[date]:.3f})")
-
-#     # === Compute contributions using latest omega ===
-#     logging.info("Computing contributions...")
-#     # latest_omega = omega_history.iloc[-1]
-#     # variable_contribs = compute_variable_contributions(df.loc[fsi_series.index], latest_omega)
-
-
-#     variable_contribs = compute_timevarying_contributions(
-#         df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
-#         )
-
-#     # === Group attribution ===
-#     logging.info("Aggregating and plotting group-level contributions...")
-
-#     group_map = {
-#         "Volatility": [
-#             "VIX_dev_250", "MOVE_dev_250", "OVX_dev_250",
-#             "VIX3M_dev_250", #"VIX_VIX3M_spread_dev_250"  # if engineered
-#         ],
-#         "Rates": [
-#             "2Y_rate_250", "10Y_3M_slope_dev_250", "10Y_rate_250"
-#         ],
-#         "Funding": [
-#             "3M_TBill_stress_250", "EFFR_stress_250" # include USD only if DXY fetched, "EFFR_VOLUME_250"
-#         ],
-#         "Credit": [
-#             "IG_OAS_dev_250", "HY_OAS_dev_250", "BBB_OAS_dev_250", "HY_IG_spread_250"
-#         ],
-#         "FX/Safe_Haven": [
-#             "Gold_dev_250", "USDJPY_dev_250", "USD_stress_250" 
-#         ],
-#     }
-
-#     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)
-
-#     # === Regime Classification ===
-#     fsi = variable_contribs['FSI']
-#     regimes = classify_risk_regime_hybrid(fsi) #classify_risk_regime_hybrid  2520 1260
-
-#     print("Regime classification value counts:\n", regimes.value_counts())
-
-#     logging.info("Plotting results...")
-#     fig1 = plot_group_contributions_with_regime(variable_contribs, regimes=regimes)
-#     fig2 = plot_grouped_contributions(grouped_contribs, regimes=regimes)
-
-#     # Load PnL data and plot
-#     try:
-#         pnl_df = pd.read_excel(config['data']['pnl_file'], index_col=0, sheet_name='PnL')
-#         fig_pnl = plot_pnl_with_regime_ribbons(pnl_df, variable_contribs, fsi_series)
-#     except Exception as e:
-#         logging.error(f"Error loading or plotting PnL data: {e}", exc_info=True)
-#         fig_pnl = None
-
-#     # Save charts to HTML
-#     output_file = config['output']['output_file']
-#     save_fsi_charts_to_html(fig1, fig2, fig_pnl)
-
-# if __name__ == '__main__':
-#     main()

@@ -359,31 +359,6 @@ def predict_regime_probability(
 ##########################################################
 
 
-# def adaptive_quantile_thresholds(series, window=500, quantiles=(0.40, 0.75, 0.95)):
-#     q_green = series.rolling(window, min_periods=window//2).quantile(quantiles[0])
-#     q_amber = series.rolling(window, min_periods=window//2).quantile(quantiles[1])
-#     q_red   = series.rolling(window, min_periods=window//2).quantile(quantiles[2])
-#     thresholds = pd.DataFrame({
-#         'green': q_green,
-#         'amber': q_amber,
-#         'red': q_red
-#     })
-#     return thresholds
-
-# def ewma_volatility(series, lambda_=0.94):
-#     returns = series.pct_change().dropna()
-#     squared_returns = returns ** 2
-#     span = (2 / (1 - lambda_)) - 1
-#     ewma_vol = squared_returns.ewm(span=span, min_periods=30).mean().apply(np.sqrt)
-#     return ewma_vol.reindex(series.index).ffill()
-
-# def volatility_spike_flags(series, vol_window=250, spike_quantile=0.9, lambda_=0.94):
-#     ewma_vol = ewma_volatility(series, lambda_)
-#     vol_change = ewma_vol.diff()
-#     spike_threshold = vol_change.rolling(vol_window).quantile(spike_quantile)
-#     spike_flags = vol_change > spike_threshold
-#     return spike_flags.fillna(False)
-
 def classify_adaptive_regime(fsi_series, quantile_window=500, vol_window=250, spike_quantile=0.9, lambda_=0.94):
     thresholds = adaptive_quantile_thresholds(fsi_series, window=quantile_window)
     spikes = volatility_spike_flags(fsi_series, vol_window=vol_window, spike_quantile=spike_quantile, lambda_=lambda_)
@@ -490,68 +465,6 @@ def classify_adaptive_regime_hybrid_fallback(
 
 
 
-
-
-###################################
-
-
-# def classify_risk_regime_hybrid(fsi_series, vol_window=20, vol_spike_quantile=0.9, simplify_to_3=False):
-#     """
-#     Hybrid regime classification combining quantile levels and volatility spikes.
-
-#     Parameters:
-#         fsi_series (pd.Series): FSI index series.
-#         vol_window (int): Rolling window for FSI volatility.
-#         vol_spike_quantile (float): Threshold for volatility change to qualify as a spike.
-#         simplify_to_3 (bool): If True, collapse Amber and Red into a single 'Red'.
-
-#     Returns:
-#         pd.Series: Regime labels (Green, Yellow, Amber, Red)
-#     """
-#     try:
-#         # Compute ECDF percentiles
-#         ranks = rankdata(fsi_series)
-#         percentiles = pd.Series(ranks / len(fsi_series), index=fsi_series.index)
-
-#         # Volatility change
-#         fsi_vol = fsi_series.rolling(vol_window).std()
-#         fsi_vol_delta = fsi_vol.diff()
-#         vol_spike_threshold = fsi_vol_delta.quantile(vol_spike_quantile)
-#         vol_spike_flags = (fsi_vol_delta > vol_spike_threshold).reindex(fsi_series.index).fillna(False)
-
-#         # Vectorized regime classification logic
-#         # For volatility spikes
-#         spike_yellow = (vol_spike_flags) & (percentiles <= 0.35)
-#         spike_amber  = (vol_spike_flags) & (percentiles > 0.35) & (percentiles <= 0.75)
-#         spike_red    = (vol_spike_flags) & (percentiles > 0.75)  # All > 0.75 go to Red (including > 0.95 as in original)
-
-#         # For no spike
-#         nospike_green = (~vol_spike_flags) & (percentiles <= 0.35)
-#         nospike_yellow = (~vol_spike_flags) & (percentiles > 0.35) & (percentiles <= 0.75)
-#         nospike_amber  = (~vol_spike_flags) & (percentiles > 0.75) & (percentiles <= 0.95)
-#         nospike_red    = (~vol_spike_flags) & (percentiles > 0.95)
-
-#         regimes = pd.Series(index=fsi_series.index, dtype='object')
-#         regimes[spike_yellow] = 'Yellow'
-#         regimes[spike_amber] = 'Amber'
-#         regimes[spike_red] = 'Red'
-#         regimes[nospike_green] = 'Green'
-#         regimes[nospike_yellow] = 'Yellow'
-#         regimes[nospike_amber] = 'Amber'
-#         regimes[nospike_red] = 'Red'
-
-#         # Fill any missing values (e.g. due to NaN at start) with 'Green'
-#         regimes = regimes.fillna('Yellow')
-
-#         if simplify_to_3:
-#             regimes = regimes.replace({'Amber': 'Red'})
-
-#         return regimes
-#     except Exception as e:
-#         logging.error(f"Error classifying risk regime: {e}", exc_info=True)
-#         return pd.Series()
-
-
 def smooth_transition_regime(fsi_series, gamma=2.5, c=0.5):
     """Calculate smooth transition weights for regime classification."""
     try:
@@ -613,111 +526,6 @@ def run_hmm(df, n_states=4, columns=None):
     most_recent_state = int(hidden_states[-1])
     return most_recent_state, df_result, state_probs
 
-
-#########=========================================================================================
-#########=========================================================================================
-
-
-# def predict_regime_probability(
-#     df, 
-#     model_type='xgboost', 
-#     lookahead=20, 
-#     columns=None,
-#     xgb_grid=None,
-#     logit_grid=None,
-#     n_splits=5,
-#     scoring='roc_auc'
-# ):
-#     """
-#     Predict the probability of being in 'Red' regime in N days using XGBoost or Logistic Regression,
-#     with TimeSeriesSplit and hyperparameter optimization.
-#     Returns most recent probability, full predicted probability series, variable importance,
-#     best estimator, and cross-validated metric.
-#     """
-#     if 'Regime' not in df.columns:
-#         raise ValueError("'Regime' column required for regime prediction.")
-
-#     df = df.copy()
-#     df['Future_Red'] = (df['Regime'].shift(-lookahead) == 'Red').astype(int)
-#     df_logit = df.dropna()
-
-#     # --- Build feature set as a DataFrame and remember names
-#     exclude = ['Future_Red', 'Regime', 'HMM_State']
-#     if columns is None:
-#         columns = [c for c in df_logit.columns if c not in exclude]
-#     X = df_logit[columns]                      # keep as DataFrame
-#     y = df_logit['Future_Red']
-#     feature_cols = X.columns.tolist()          # <-- remember names
-
-#     # --- Scale but preserve DataFrame structure
-#     scaler = StandardScaler()
-#     X_scaled = scaler.fit_transform(X)
-#     X = pd.DataFrame(X_scaled, columns=feature_cols, index=df_logit.index)  # <-- wrap back to DF
-
-#     # StratifiedKFold for classification
-#     tscv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-
-#     # Hyperparameter grids
-#     if model_type == 'xgboost':
-#         from xgboost import XGBClassifier
-#         if xgb_grid is None:
-#             xgb_grid = {
-#                 'n_estimators': [100, 200],
-#                 'max_depth': [3, 5],
-#                 'learning_rate': [0.01, 0.1],
-#                 'subsample': [0.7, 1.0],
-#             }
-#         model = XGBClassifier(eval_metric='logloss', random_state=42)
-#         search = GridSearchCV(
-#             estimator=model,
-#             param_grid=xgb_grid,
-#             cv=tscv,
-#             scoring=scoring,
-#             n_jobs=-1,
-#             verbose=0
-#         )
-#     else:
-#         from sklearn.linear_model import LogisticRegression
-#         if logit_grid is None:
-#             logit_grid = {
-#                 'C': [0.01, 0.1, 1, 10],
-#                 'penalty': ['l2'],
-#                 'solver': ['lbfgs', 'liblinear'],
-#                 'max_iter': [700, 1200]
-#             }
-#         model = LogisticRegression()
-#         search = GridSearchCV(
-#             estimator=model,
-#             param_grid=logit_grid,
-#             cv=tscv,
-#             scoring=scoring,
-#             n_jobs=-1,
-#             verbose=0
-#         )
-
-#     search.fit(X, y)
-#     best_model = search.best_estimator_
-#     best_score = search.best_score_
-
-#     # Predict proba for entire data (align with df_logit)
-#     y_proba = best_model.predict_proba(X)[:, 1]
-#     proba_full = np.full(len(df_logit), np.nan)
-#     proba_full[-len(y_proba):] = y_proba
-
-#     # Most recent probability
-#     most_recent_proba = y_proba[-1]
-
-#     # Variable importance using preserved names
-#     if model_type == 'xgboost':
-#         importance = best_model.feature_importances_
-#     else:
-#         importance = np.abs(best_model.coef_[0])
-#     feature_importance = dict(zip(feature_cols, importance))  # <-- use saved names
-
-#     return most_recent_proba, proba_full, feature_importance, best_model, best_score
-
-#########=========================================================================================
-#########=========================================================================================
 
 # --- HHI helpers ---
 
@@ -824,8 +632,8 @@ def build_dynamic_group_map(df, window_pref=("250","252","260","126","125","63")
     candidates = {
         "Volatility": [f"VIX_dev{suf}", f"MOVE_dev{suf}", f"OVX_dev{suf}", f"VIX3M_dev{suf}", f"VIX_VIX3M_spread_dev{suf}",
                        "VIX_dev", "MOVE_dev", "OVX_dev", "VIX3M_dev", "VIX_VIX3M_spread_dev"],
-        "Rates": [f"2Y_rate{suf}", f"10Y_rate{suf}", f"10Y_3M_slope_dev{suf}",
-                  "2Y_rate", "10Y_rate", "10Y_3M_slope_dev"],
+        "Rates": [f"2Y_rate{suf}", f"10Y_rate_dev{suf}", f"10Y_3M_inversion_dev{suf}",
+                  "2Y_rate", "10Y_rate_dev", "10Y_3M_inversion_dev"],
         "Funding": [f"3M_TBill_stress{suf}", f"EFFR_stress{suf}", "3M_TBill_stress", "EFFR_stress"],
         "Credit": [f"IG_OAS_dev{suf}", f"HY_OAS_dev{suf}", f"BBB_OAS_dev{suf}", f"HY_IG_spread{suf}",
                    "IG_OAS_dev", "HY_OAS_dev", "BBB_OAS_dev", "HY_IG_spread"],
@@ -864,7 +672,8 @@ def _pick_anchor_columns(df, pref_windows=("250","252","260","126","125","63")):
     base_opts = {
         "VIX_dev": ["VIX_dev"],
         "MOVE_dev": ["MOVE_dev"],
-        "10Y_rate": ["10Y_rate"],
+        "10Y_rate_dev": ["10Y_rate_dev"],
+        "10Y_3M_inversion_dev": ["10Y_3M_inversion_dev"],
         "OVX_dev": ["OVX_dev"],
         "Gold_dev": ["Gold_dev"],
         "HY_OAS_dev": ["HY_OAS_dev","US HY OAS_dev"],
@@ -906,130 +715,6 @@ def _make_stress_proxy(df):
             return df[group].mean(axis=1)
     # nothing found -> zero proxy to avoid flips
     return pd.Series(0.0, index=df.index)
-
-
-
-
-
-
-# def orient_fsi_and_omega(
-#     fsi_series: pd.Series,
-#     omega_history: pd.DataFrame,
-#     df_engineered: pd.DataFrame,
-#     stability_series: pd.Series = None,
-#     stability_threshold: float = 0.7,
-#     freeze_after_days: int = 60,
-# ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
-#     """
-#     Enforce 'stress positive' orientation with anchor fallback & freezing.
-#     - Try anchors at each t; if unavailable/NaN, use correlation with robust proxy.
-#     - Once stable for 'freeze_after_days' (cosine >= threshold) and orientation agrees with proxy,
-#       freeze sign (no further flips) unless a *compelling flip* occurs:
-#       cosine < 0 (direction break) AND corr(FSI, proxy) changes sign contemporaneously.
-#     Returns: (fsi_oriented, omega_oriented, audit_log_df)
-#     """
-#     fsi = fsi_series.copy()
-#     omega = omega_history.copy()
-#     idx = fsi.index
-#     df_e = df_engineered.reindex(idx)
-
-#     # anchors (at the suffix we actually have)
-#     anchors = _pick_anchor_columns(omega)
-#     proxy = _make_stress_proxy(df_e).reindex(idx)
-
-#     frozen = False
-#     freeze_start = None
-#     flip_events = []
-
-#     # running orientation state (+1 or -1)
-#     sign = 1.0
-
-#     # helper to compute anchor sign at t
-#     def anchor_sign_t(t):
-#         if not anchors:
-#             return np.nan
-#         vals = omega.loc[t, [a for a in anchors if a in omega.columns]]
-#         m = np.nanmean(vals.values.astype(float)) if len(vals) else np.nan
-#         if np.isnan(m):
-#             return np.nan
-#         return np.sign(m) if m != 0 else 1.0
-
-#     # rolling logic
-#     for i, t in enumerate(idx):
-#         # 1) default: anchor sign
-#         a_sign = anchor_sign_t(t)
-
-#         # 2) fallback: correlation with proxy up to t
-#         if np.isnan(a_sign):
-#             # windowed correlation to avoid tiny sample issues
-#             w = min(252, i+1)
-#             if w < 30:
-#                 p_sign = 1.0
-#             else:
-#                 corr = pd.concat([fsi.iloc[:i+1], proxy.iloc[:i+1]], axis=1).dropna()
-#                 if len(corr) < 30:
-#                     p_sign = 1.0
-#                 else:
-#                     r = corr.corr().iloc[0,1]
-#                     p_sign = 1.0 if pd.isna(r) else (1.0 if r >= 0 else -1.0)
-#             desired = p_sign
-#             rationale = "proxy"
-#         else:
-#             desired = a_sign
-#             rationale = "anchors"
-
-#         # 3) freeze logic: after a stable stretch, stop flipping unless 'compelling'
-#         if not frozen and stability_series is not None:
-#             # detect stable consecutive run
-#             stable_mask = (stability_series >= stability_threshold).reindex(idx).fillna(False)
-#             if i >= freeze_after_days and stable_mask.iloc[max(0, i-freeze_after_days+1):i+1].all():
-#                 # orientation also agrees with proxy? if so, freeze now
-#                 w = min(252, i+1)
-#                 if w >= 60:
-#                     corr = pd.concat([fsi.iloc[:i+1], proxy.iloc[:i+1]], axis=1).dropna()
-#                     if len(corr) >= 60:
-#                         r = corr.corr().iloc[0,1]
-#                         if not pd.isna(r) and (r >= 0) == (desired >= 0):
-#                             frozen = True
-#                             freeze_start = t
-#                             logging.info(f"[ORIENT] Orientation frozen at {t.date()} (stable {freeze_after_days}d, r={r:.3f}).")
-
-#         # 4) apply or block flip
-#         flip_now = (np.sign(desired) != np.sign(sign))
-#         if frozen and flip_now:
-#             # Only allow flip if 'compelling': cosine < 0 AND proxy correlation sign changed using a recent window
-#             compelling = False
-#             if stability_series is not None and stability_series.loc[t] < 0:
-#                 w = min(252, i+1)
-#                 pre_w = max(60, w//3)
-#                 corr_recent = pd.concat([fsi.iloc[max(0,i-pre_w):i+1], proxy.iloc[max(0,i-pre_w):i+1]], axis=1).dropna()
-#                 if len(corr_recent) >= 30:
-#                     r = corr_recent.corr().iloc[0,1]
-#                     # flip if correlation indicates mis-orientation
-#                     compelling = (r < 0)
-#             if not compelling:
-#                 # block the flip
-#                 desired = sign
-#                 rationale += "|frozen"
-#             else:
-#                 rationale += "|compelling_flip"
-
-#         # record event
-#         if np.sign(desired) != np.sign(sign):
-#             flip_events.append({"date": t, "reason": rationale})
-
-#         sign = 1.0 if desired >= 0 else -1.0
-#         # apply sign at time t (pointwise multiply)
-#         fsi.iloc[i] = fsi.iloc[i] * sign
-#         omega.iloc[i, :] = omega.iloc[i, :] * sign
-
-#     # audit
-#     audit = pd.DataFrame(flip_events)
-#     if audit.empty:
-#         logging.info("[ORIENT] No sign flips required across sample.")
-#     else:
-#         logging.warning(f"[ORIENT] {len(audit)} sign flip event(s).")
-#     return fsi, omega, audit
 
 
 
