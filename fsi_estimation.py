@@ -113,16 +113,21 @@ def estimate_fsi_recursive_rolling_with_stability(
     #     omega_history[t] = omega  # correct direction if flipped
 
     # inside the stability loop in estimate_fsi_recursive_rolling_with_stability
+
+    prev_omega = None
+    stability_series = np.zeros(len(omega_history))
+    flagged_idx = []
+
     for t in range(len(omega_history)):
         omega = omega_history[t]
         if prev_omega is not None:
             cos_sim = np.dot(prev_omega, omega) / (np.linalg.norm(prev_omega) * np.linalg.norm(omega))
             if cos_sim < 0:
-                omega *= -1
-                cos_sim *= -1
-                # fsi_series[t] *= -1.0   # keep FSI and ω in sync
+                # flip BOTH omega and current FSI so the two remain consistent
+                omega *= -1.0
+                fsi_series[t] *= -1.0
+                cos_sim *= -1.0
             stability_series[t] = cos_sim
-            # >>> restore the unstable flag collection <<<
             if cos_sim < stability_threshold:
                 flagged_idx.append(t)
         else:

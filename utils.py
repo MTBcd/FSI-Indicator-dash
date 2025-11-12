@@ -751,7 +751,6 @@ def _make_stress_proxy(df: pd.DataFrame,
 
 
 
-
 def orient_fsi_and_omega(
     fsi_series: pd.Series,
     omega_history: pd.DataFrame,
@@ -762,84 +761,82 @@ def orient_fsi_and_omega(
     anchor_smooth_days: int = 21,
     corr_window_freeze: int = 126,
     corr_window_flip: int = 60,
-    min_corr_to_freeze: float = 0.20,         # a bit stricter now
+    min_corr_to_freeze: float = 0.20,
     allow_flip_cosine_thresh: float = 0.15,
     flip_persist_days: int = 7,
     rho_guard: float = 0.10,
     vote_window: int = 5,
     vote_threshold: float = 0.6,
-    cooldown_days: int = 45
+    cooldown_days: int = 45,
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
-    """
-    Robust orientation:
-    - Signed rolling proxy (so 'more stress' -> higher proxy).
-    - Anchor vote from key loadings (we want these *positive*).
-    - Majority vote + hysteresis + cooldown once frozen.
-    """
     import numpy as np, pandas as pd, logging
 
-    fsi  = fsi_series.copy()
-    omega = omega_history.copy().reindex_like(omega_history)
-    idx  = fsi.index
-    df_e = df_engineered.reindex(idx)
+    fsi   = fsi_series.copy()
+    omega = omega_history.copy()
+    idx   = fsi.index
+    df_e  = df_engineered.reindex(idx)
 
-    # ---- Signed proxy (no abs); this encodes the economic direction
+    # --------- signed proxy & anchors ----------
     proxy = _make_stress_proxy(df_e).reindex(idx)
 
-    # ---- Anchors: prefer longer-window engineered columns that should be positive
     try:
         anchors = _pick_anchor_columns(omega)
     except NameError:
         anchors = []
     if anchors:
-        # Smooth the *sum* of anchor loadings; we want it positive
         anchor_signal = (omega[anchors]
                          .sum(axis=1)
-                         .rolling(anchor_smooth_days, min_periods=max(5, anchor_smooth_days//3))
+                         .rolling(anchor_smooth_days,
+                                  min_periods=max(5, anchor_smooth_days//3))
                          .median())
     else:
         anchor_signal = pd.Series(np.nan, index=idx)
 
-    logging.info(f"[ORIENT] Anchors used (up to 8 shown): {anchors[:8]}{'...' if len(anchors)>8 else ''}")
+    logging.info(f"[ORIENT] Anchors: {anchors[:8]}{'...' if len(anchors)>8 else ''}")
 
     def rolling_corr(a, b, w):
         z = pd.concat([a, b], axis=1).dropna()
         if z.empty:
             return np.nan
-        z = z.iloc[-min(w, len(z)):]
-        return float(z.corr().iloc[0,1]) if len(z) >= 5 else np.nan
+        z = z.iloc[-min(w, len(z)) :]
+        return float(z.corr().iloc[0, 1]) if len(z) >= 5 else np.nan
 
+    # --------- ONE-TIME BOOTSTRAP (before loop) ----------
+    boot_win = min(252, max(60, len(fsi)//6))
+    r_boot = fsi.iloc[:boot_win].corr(proxy.iloc[:boot_win])
+    if not pd.isna(r_boot) and r_boot < 0:
+        fsi *= -1.0
+        omega *= -1.0
+        logging.info(f"[ORIENT] Bootstrapped global sign (r_boot={r_boot:.3f} < 0).")
+
+    # --------- iterative orientation with voting / freeze ----------
     frozen = False
     sign = 1.0
     flip_events = []
     last_flip_i = -10**9
-    vote_buf = []
+    vote_buf: list[float] = []
 
     for i, t in enumerate(idx):
-        # --- instantaneous votes ---
-        # 1) proxy vote: keep corr(FSI, proxy) non-negative over a short expanding window
+        # votes
         r_short = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], min(126, i+1))
         vote_proxy = 1.0 if (pd.isna(r_short) or r_short >= 0) else -1.0
 
-        # 2) anchor vote: want anchor sum of loadings to be positive
         a_val = anchor_signal.loc[t] if t in anchor_signal.index else np.nan
-        vote_anchor = (1.0 if (not pd.isna(a_val) and a_val >= 0) else
-                       (-1.0 if (not pd.isna(a_val) and a_val < 0) else 0.0))
+        vote_anchor = (1.0 if (not pd.isna(a_val) and a_val >= 0)
+                       else (-1.0 if (not pd.isna(a_val) and a_val < 0) else 0.0))
 
-        # combine votes (proxy has weight 1, anchors weight 1 when present)
         instant_vote = vote_proxy + vote_anchor
-        # convert to {-1,0,1}
         instant_vote = 1.0 if instant_vote > 0 else (-1.0 if instant_vote < 0 else 0.0)
 
-        # --- hysteresis vote buffer ---
+        # hysteresis buffer
         vote_buf.append(instant_vote if instant_vote != 0 else np.sign(sign))
         if len(vote_buf) > vote_window:
             vote_buf.pop(0)
-        avg_vote = np.mean(vote_buf)  # [-1, 1]
+        avg_vote = float(np.mean(vote_buf))
         strong_vote = abs(avg_vote) >= vote_threshold
         desired = np.sign(avg_vote) if strong_vote else np.sign(sign)
 
-        # --- can we freeze now?
+        # freeze check
         if not frozen and stability_series is not None and i >= freeze_after_days:
             stable_ok = (stability_series.reindex(idx)
                          .iloc[max(0, i-freeze_after_days+1):i+1]
@@ -851,14 +848,13 @@ def orient_fsi_and_omega(
                 last_flip_i = i
                 flip_events.append({"date": t, "reason": f"freeze(r={r_freeze:.3f})"})
 
-        # --- after freeze, only flip with strong, persistent evidence AND cooldown ---
+        # guarded flips after freeze
         want_flip = (np.sign(desired) != np.sign(sign))
         if frozen and want_flip:
             if (i - last_flip_i) < cooldown_days:
                 desired = sign
             else:
                 cos_ok = (stability_series is not None) and (stability_series.loc[t] < allow_flip_cosine_thresh)
-                # persistence of negative corr with the *signed* proxy
                 persist = True
                 for k in range(flip_persist_days):
                     r_k = rolling_corr(fsi.iloc[:i+1-k], proxy.iloc[:i+1-k], corr_window_flip)
@@ -874,28 +870,18 @@ def orient_fsi_and_omega(
             flip_events.append({"date": t, "reason": "pre-freeze_vote" if not frozen else "post-freeze"})
 
         sign = 1.0 if desired >= 0 else -1.0
-        fsi.iloc[i]    *= sign
+        fsi.iloc[i]     *= sign
         omega.iloc[i,:] *= sign
 
-    # --- guardrail on the last year: FSI should not be anti-correlated with signed proxy
+    # post-hoc guard
     r_guard_val = rolling_corr(fsi, proxy, 252)
     if not pd.isna(r_guard_val) and r_guard_val < -rho_guard:
-        fsi *= -1
-        omega *= -1
+        fsi *= -1.0
+        omega *= -1.0
         flip_events.append({"date": idx[-1], "reason": f"posthoc_guard_flip(r252={r_guard_val:.3f})"})
         logging.warning(f"[ORIENT] Post-hoc guard flip applied (r252={r_guard_val:.3f}).")
 
     audit = pd.DataFrame(flip_events)
-    if audit.empty:
-        logging.info("[ORIENT] No sign flips required across sample.")
-    else:
-        logging.warning(f"[ORIENT] {len(audit)} sign flip event(s).")
-
-    # QC: crises should be up (positive) now because proxy is signed-positive in stress.
-    try:
-        r_end = fsi.iloc[-252:].corr(proxy.iloc[-252:])
-        logging.info(f"[ORIENT] End 252d corr(FSI, signed proxy) = {r_end:.3f}")
-    except Exception:
-        pass
-
     return fsi, omega, audit
+
+
