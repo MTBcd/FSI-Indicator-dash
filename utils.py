@@ -733,7 +733,6 @@ def _make_stress_proxy(df):
     return proxy.ewm(span=21, min_periods=5).mean()
 
 
-
 def orient_fsi_and_omega(
     fsi_series: pd.Series,
     omega_history: pd.DataFrame,
@@ -748,66 +747,65 @@ def orient_fsi_and_omega(
     allow_flip_cosine_thresh: float = 0.15,
     flip_persist_days: int = 7,
     rho_guard: float = 0.10,
+    vote_window: int = 5,             # NEW: how many days to average the sign vote
+    vote_threshold: float = 0.6,      # NEW: |avg vote| must exceed this to act
+    cooldown_days: int = 45           # NEW: minimum days between flips once frozen
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
-    """
-    Single source of truth for FSI/omega sign.
-    - Uses (patched) _pick_anchor_columns() to get stable 'stress-positive' anchors.
-    - Falls back to a smoothed stress proxy when anchors are missing.
-    - Freezes the sign once stable; after freeze it will flip ONLY with strong, persistent evidence.
-    """
     import numpy as np, pandas as pd, logging
 
-    # defensive align
     fsi = fsi_series.copy()
-    omega = omega_history.copy()
+    omega = omega_history.copy().reindex_like(omega_history)
     idx = fsi.index
     df_e = df_engineered.reindex(idx)
 
-    # ---- 1) Anchors & proxy
+    # anchors & proxy
     try:
-        anchors = _pick_anchor_columns(omega)  # relies on your patched version
+        anchors = _pick_anchor_columns(omega)
     except NameError:
-        anchors = []  # if the helper isn't available, continue with proxy only
+        anchors = []
     proxy = _make_stress_proxy(df_e).reindex(idx)
 
     if anchors:
-        anchor_mean = omega[anchors].mean(axis=1)
-        anchor_sm = anchor_mean.rolling(
-            anchor_smooth_days,
-            min_periods=max(5, anchor_smooth_days // 3)
-        ).median()
+        anchor_sm = (
+            omega[anchors].mean(axis=1)
+            .rolling(anchor_smooth_days, min_periods=max(5, anchor_smooth_days//3))
+            .median()
+        )
     else:
-        anchor_sm = pd.Series(index=idx, data=np.nan)
+        anchor_sm = pd.Series(np.nan, index=idx)
 
-    logging.info(f"[ORIENT] Using anchors: {anchors[:8]}{'...' if len(anchors)>8 else ''}")
-
-    # ---- 2) helpers
-    def rolling_corr(a: pd.Series, b: pd.Series, w: int) -> float:
+    def rolling_corr(a, b, w):
         z = pd.concat([a, b], axis=1).dropna()
         if z.empty:
             return np.nan
         z = z.iloc[-min(w, len(z)):]
-        if len(z) < 5:
-            return np.nan
-        return float(z.corr().iloc[0, 1])
+        return float(z.corr().iloc[0, 1]) if len(z) >= 5 else np.nan
 
-    # ---- 3) iterate and set sign
     frozen = False
-    sign = 1.0  # current applied sign
+    sign = 1.0
     flip_events = []
+    last_flip_i = -10**9
+
+    # running vote buffer
+    vote_buf = []
 
     for i, t in enumerate(idx):
-        # desired sign from anchors if available, else from proxy correlation
-        a_val = anchor_sm.loc[t] if t in anchor_sm.index else np.nan
+        # instantaneous “desired” sign
+        a_val = anchor_sm.loc[t]
         if pd.isna(a_val):
-            # correlate to proxy over available history (cap at 126 days early on)
-            w = min(126, i + 1)
+            w = min(126, i+1)
             r = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], w)
-            desired = 1.0 if (pd.isna(r) or r >= 0.0) else -1.0
-            rationale = "proxy"
+            desired_now = 1.0 if (pd.isna(r) or r >= 0) else -1.0
         else:
-            desired = 1.0 if a_val >= 0 else -1.0
-            rationale = "anchors(smoothed)"
+            desired_now = 1.0 if a_val >= 0 else -1.0
+
+        # --- vote / hysteresis
+        vote_buf.append(desired_now)
+        if len(vote_buf) > vote_window:
+            vote_buf.pop(0)
+        avg_vote = np.mean(vote_buf)            # in [-1, 1]
+        strong_vote = abs(avg_vote) >= vote_threshold
+        desired = np.sign(avg_vote) if strong_vote else np.sign(sign)
 
         # --- can we freeze now?
         if not frozen and stability_series is not None and i >= freeze_after_days:
@@ -815,45 +813,47 @@ def orient_fsi_and_omega(
                          .iloc[max(0, i-freeze_after_days+1):i+1]
                          .ge(stability_threshold)).all()
             r_freeze = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], corr_window_freeze)
-            align_ok = (not pd.isna(r_freeze)) and (r_freeze >= min_corr_to_freeze) and (np.sign(desired) == +1)
+            align_ok = (not pd.isna(r_freeze)) and (r_freeze >= min_corr_to_freeze) and (desired >= 0)
             if stable_ok and align_ok:
                 frozen = True
+                last_flip_i = i
                 flip_events.append({"date": t, "reason": f"freeze(r={r_freeze:.3f})"})
 
-        # --- after freeze, only flip with STRONG evidence (AND condition)
-        flip_now = (np.sign(desired) != np.sign(sign))
-        if frozen and flip_now:
-            cos_ok = (stability_series is not None) and (stability_series.loc[t] < allow_flip_cosine_thresh)
-            # persistent negative correlation with proxy
-            persist = True
-            for k in range(flip_persist_days):
-                r_k = rolling_corr(fsi.iloc[:i+1-k], proxy.iloc[:i+1-k], corr_window_flip)
-                if pd.isna(r_k) or r_k >= -0.10:
-                    persist = False
-                    break
-            compelling = cos_ok and persist  # AND, not OR
-            if not compelling:
-                desired = sign
-                rationale += "|frozen"
+        # --- after freeze, only flip on strong, persistent evidence AND observe cooldown
+        want_flip = (np.sign(desired) != np.sign(sign))
+        if frozen and want_flip:
+            if (i - last_flip_i) < cooldown_days:
+                desired = sign  # cooldown blocks it
             else:
-                rationale += "|compelling_flip"
+                cos_ok = (stability_series is not None) and (stability_series.loc[t] < allow_flip_cosine_thresh)
+                # persistence of negative corr
+                persist = True
+                for k in range(flip_persist_days):
+                    r_k = rolling_corr(fsi.iloc[:i+1-k], proxy.iloc[:i+1-k], corr_window_flip)
+                    if pd.isna(r_k) or r_k >= -0.10:
+                        persist = False; break
+                # also require the vote to be strong
+                if not (cos_ok and persist and strong_vote):
+                    desired = sign
+                else:
+                    last_flip_i = i
+                    flip_events.append({"date": t, "reason": "compelling_flip|vote&cos&persistence"})
 
-        # log a flip decision (pre-application)
+        # record flip before applying
         if np.sign(desired) != np.sign(sign):
-            flip_events.append({"date": t, "reason": rationale})
+            flip_events.append({"date": t, "reason": "pre-freeze_vote" if not frozen else "post-freeze"})
 
-        # apply sign for this step
         sign = 1.0 if desired >= 0 else -1.0
-        fsi.iloc[i] *= sign
+        fsi.iloc[i]   *= sign
         omega.iloc[i, :] *= sign
 
-    # ---- 4) post-hoc yearly guardrail
-    r_guard = rolling_corr(fsi, proxy, 252)
-    if not pd.isna(r_guard) and r_guard < -rho_guard:
+    # post-hoc yearly guardrail
+    r_guard_val = rolling_corr(fsi, proxy, 252)
+    if not pd.isna(r_guard_val) and r_guard_val < -rho_guard:
         fsi *= -1
         omega *= -1
-        flip_events.append({"date": idx[-1], "reason": f"posthoc_guard_flip(r252={r_guard:.3f})"})
-        logging.warning(f"[ORIENT] Post-hoc guard flip applied (r252={r_guard:.3f}).")
+        flip_events.append({"date": idx[-1], "reason": f"posthoc_guard_flip(r252={r_guard_val:.3f})"})
+        logging.warning(f"[ORIENT] Post-hoc guard flip applied (r252={r_guard_val:.3f}).")
 
     audit = pd.DataFrame(flip_events)
     if audit.empty:
@@ -861,7 +861,6 @@ def orient_fsi_and_omega(
     else:
         logging.warning(f"[ORIENT] {len(audit)} sign flip event(s).")
 
-    # sanity print
     try:
         r_end = fsi.iloc[-252:].corr(proxy.iloc[-252:])
         logging.info(f"[ORIENT] End 252d corr(FSI, proxy) = {r_end:.3f}")
