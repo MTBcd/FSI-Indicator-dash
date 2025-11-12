@@ -616,48 +616,52 @@ def average_time_in_regime(regime_series):
 
 def build_dynamic_group_map(df, window_pref=("250","252","260","126","125","63")):
     """
-    Build groups from PRESENT columns, preferring the largest available window suffix.
-    Returns a dict group -> [cols].
+    Build a group -> [columns] map from the columns that ACTUALLY exist in `df`.
+    Prefers the longest available window suffix from `window_pref`.
     """
-    # Decide one preferred suffix that actually exists
-    suffixes = []
-    for c in df.columns:
-        parts = c.rsplit("_", 1)
-        if len(parts)==2 and parts[1].isdigit():
-            suffixes.append(parts[1])
-    suffix = next((s for s in window_pref if s in set(suffixes)), None)
+    # detect which numeric window suffixes exist (e.g., "..._126")
+    suffixes = {
+        c.rsplit("_", 1)[1] for c in df.columns
+        if "_" in c and c.rsplit("_", 1)[1].isdigit()
+    }
+    suffix = next((s for s in window_pref if s in suffixes), None)
     suf = f"_{suffix}" if suffix else ""
 
-    # candidate columns per group (try both with/without suffix; we’ll filter to present)
+    # IMPORTANT: these names mirror your engineered features
     candidates = {
-        "Volatility": [f"VIX_dev{suf}", f"MOVE_dev{suf}", f"OVX_dev{suf}", f"VIX3M_dev{suf}", f"VIX_VIX3M_spread_dev{suf}",
-                       "VIX_dev", "MOVE_dev", "OVX_dev", "VIX3M_dev", "VIX_VIX3M_spread_dev"],
-        "Rates": [f"2Y_rate{suf}", f"10Y_rate_dev{suf}", f"10Y_3M_inversion_dev{suf}",
-                  "2Y_rate", "10Y_rate_dev", "10Y_3M_inversion_dev"],
-        "Funding": [f"3M_TBill_stress{suf}", f"EFFR_stress{suf}", "3M_TBill_stress", "EFFR_stress"],
-        "Credit": [f"IG_OAS_dev{suf}", f"HY_OAS_dev{suf}", f"BBB_OAS_dev{suf}", f"HY_IG_spread{suf}",
-                   "IG_OAS_dev", "HY_OAS_dev", "BBB_OAS_dev", "HY_IG_spread"],
-        "FX/Safe_Haven": [f"Gold_dev{suf}", f"USDJPY_dev{suf}", f"USD_stress{suf}",
-                          "Gold_dev", "USDJPY_dev", "USD_stress"],
+        "Volatility": [
+            f"VIX_dev{suf}", f"MOVE_dev{suf}", f"OVX_dev{suf}", f"VIX3M_dev{suf}",
+            "VIX_dev", "MOVE_dev", "OVX_dev", "VIX3M_dev"
+        ],
+        "Rates": [
+            f"10Y_rate_dev{suf}", f"10Y_3M_inversion_dev{suf}",
+            "10Y_rate_dev", "10Y_3M_inversion_dev"
+        ],
+        "Funding": [
+            f"3M_TBill_stress{suf}", f"EFFR_stress{suf}",
+            "3M_TBill_stress", "EFFR_stress"
+        ],
+        "Credit": [
+            f"IG_OAS_dev{suf}", f"HY_OAS_dev{suf}", f"BBB_OAS_dev{suf}", f"HY_IG_spread{suf}",
+            "IG_OAS_dev", "HY_OAS_dev", "BBB_OAS_dev", "HY_IG_spread"
+        ],
+        "FX/Safe_Haven": [
+            f"Gold_dev{suf}", f"USDJPY_dev{suf}", f"USD_stress{suf}",
+            "Gold_dev", "USDJPY_dev", "USD_stress"
+        ],
     }
+
+    present = set(df.columns)
     group_map = {}
-    present_cols = set(df.columns)
     for g, opts in candidates.items():
-        cols = [c for c in opts if c in present_cols]
-        if cols:
-            # de-dup while preserving order
-            seen=set(); clean=[]
-            for c in cols:
-                if c not in seen:
-                    seen.add(c); clean.append(c)
-            group_map[g] = clean
-        else:
-            # leave group empty -> downstream will set to 0 if desired
-            group_map[g] = []
+        cols = [c for c in opts if c in present]
+        # de-dup while preserving order
+        seen, clean = set(), []
+        for c in cols:
+            if c not in seen:
+                seen.add(c); clean.append(c)
+        group_map[g] = clean
     return group_map
-
-
-
 
 
 
@@ -705,24 +709,28 @@ def _pick_anchor_columns(df, pref_windows=("250","252","260","126","125","63")):
     return present
 
 
+
 def _make_stress_proxy(df):
     """
-    Robust proxy using available credit/vol vars (already engineered, deviation-type).
-    Falls back to anything strongly 'stressy' (~OAS, VIX, MOVE).
-    Returns a pandas Series aligned to df index.
+    Robust stress proxy used only for ORIENTATION.
+    - Uses absolute values to avoid cancellations.
+    - Prioritizes Credit and Volatility features.
+    - Smooths with a short EWMA to reduce noise.
     """
-    # candidates by importance
-    priority_groups = [
-        [c for c in df.columns if ("HY_OAS_dev" in c) or ("IG_OAS_dev" in c) or ("BBB_OAS_dev" in c)],
-        [c for c in df.columns if ("VIX_dev" in c) or ("MOVE_dev" in c) or ("OVX_dev" in c)],
-        [c for c in df.columns if ("Gold_dev" in c) or ("USD_stress" in c)]
-    ]
-    for group in priority_groups:
-        if group:
-            return df[group].mean(axis=1)
-    # nothing found -> zero proxy to avoid flips
-    return pd.Series(0.0, index=df.index)
+    # pick in priority order
+    picks = []
+    picks += [c for c in df.columns if ("OAS_dev" in c)]  # credit first
+    picks += [c for c in df.columns if c.startswith(("VIX_dev", "MOVE_dev", "OVX_dev", "VIX3M_dev"))]
+    picks += [c for c in df.columns if c.startswith(("USD_stress", "USDJPY_dev", "Gold_dev"))]
+    picks += [c for c in df.columns if c.startswith(("3M_TBill_stress", "EFFR_stress"))]
 
+    if not picks:
+        # nothing available → zero proxy to avoid random flips
+        return pd.Series(0.0, index=df.index)
+
+    proxy = df[picks].abs().mean(axis=1)
+    # light smoothing so orientation is stable but still responsive
+    return proxy.ewm(span=21, min_periods=5).mean()
 
 
 
@@ -730,97 +738,116 @@ def orient_fsi_and_omega(
     fsi_series: pd.Series,
     omega_history: pd.DataFrame,
     df_engineered: pd.DataFrame,
-    stability_series: pd.Series = None,
+    stability_series: pd.Series | None = None,
     stability_threshold: float = 0.7,
-    freeze_after_days: int = 60,
+    freeze_after_days: int = 90,
     anchor_smooth_days: int = 21,
     corr_window_freeze: int = 126,
     corr_window_flip: int = 60,
-    min_corr_to_freeze: float = 0.05,
-    allow_flip_cosine_thresh: float = 0.2,
-    flip_persist_days: int = 5,
-    rho_guard: float = 0.05,
+    min_corr_to_freeze: float = 0.15,
+    allow_flip_cosine_thresh: float = 0.15,
+    flip_persist_days: int = 7,
+    rho_guard: float = 0.10,
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+    """
+    Single source of truth for FSI/omega sign.
+    - Uses (patched) _pick_anchor_columns() to get stable 'stress-positive' anchors.
+    - Falls back to a smoothed stress proxy when anchors are missing.
+    - Freezes the sign once stable; after freeze it will flip ONLY with strong, persistent evidence.
+    """
     import numpy as np, pandas as pd, logging
 
+    # defensive align
     fsi = fsi_series.copy()
     omega = omega_history.copy()
     idx = fsi.index
     df_e = df_engineered.reindex(idx)
 
-    anchors = _pick_anchor_columns(omega)
+    # ---- 1) Anchors & proxy
+    try:
+        anchors = _pick_anchor_columns(omega)  # relies on your patched version
+    except NameError:
+        anchors = []  # if the helper isn't available, continue with proxy only
     proxy = _make_stress_proxy(df_e).reindex(idx)
 
-    # smoothed anchor sign series
     if anchors:
         anchor_mean = omega[anchors].mean(axis=1)
-        anchor_sm = anchor_mean.rolling(anchor_smooth_days, min_periods=max(5, anchor_smooth_days//3)).median()
+        anchor_sm = anchor_mean.rolling(
+            anchor_smooth_days,
+            min_periods=max(5, anchor_smooth_days // 3)
+        ).median()
     else:
         anchor_sm = pd.Series(index=idx, data=np.nan)
 
-    frozen = False
-    flip_events = []
-    sign = 1.0
+    logging.info(f"[ORIENT] Using anchors: {anchors[:8]}{'...' if len(anchors)>8 else ''}")
 
-    # helper: rolling correlation
-    def rolling_corr(a, b, w):
+    # ---- 2) helpers
+    def rolling_corr(a: pd.Series, b: pd.Series, w: int) -> float:
         z = pd.concat([a, b], axis=1).dropna()
         if z.empty:
             return np.nan
-        return z.iloc[-w:].corr().iloc[0,1] if len(z) >= 5 else np.nan
+        z = z.iloc[-min(w, len(z)):]
+        if len(z) < 5:
+            return np.nan
+        return float(z.corr().iloc[0, 1])
+
+    # ---- 3) iterate and set sign
+    frozen = False
+    sign = 1.0  # current applied sign
+    flip_events = []
 
     for i, t in enumerate(idx):
-        # desired sign from anchors if available, else from proxy corr up to t
+        # desired sign from anchors if available, else from proxy correlation
         a_val = anchor_sm.loc[t] if t in anchor_sm.index else np.nan
         if pd.isna(a_val):
-            # fallback: pick sign to make corr(FSI, proxy) over a short window positive
-            w = min(126, i+1)
+            # correlate to proxy over available history (cap at 126 days early on)
+            w = min(126, i + 1)
             r = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], w)
-            desired = 1.0 if (pd.isna(r) or r >= 0) else -1.0
+            desired = 1.0 if (pd.isna(r) or r >= 0.0) else -1.0
             rationale = "proxy"
         else:
             desired = 1.0 if a_val >= 0 else -1.0
             rationale = "anchors(smoothed)"
 
-        # check if we can freeze (stable + aligned with proxy)
+        # --- can we freeze now?
         if not frozen and stability_series is not None and i >= freeze_after_days:
-            # stable window
             stable_ok = (stability_series.reindex(idx)
                          .iloc[max(0, i-freeze_after_days+1):i+1]
                          .ge(stability_threshold)).all()
-            # proxy alignment window
             r_freeze = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], corr_window_freeze)
             align_ok = (not pd.isna(r_freeze)) and (r_freeze >= min_corr_to_freeze) and (np.sign(desired) == +1)
             if stable_ok and align_ok:
                 frozen = True
                 flip_events.append({"date": t, "reason": f"freeze(r={r_freeze:.3f})"})
 
+        # --- after freeze, only flip with STRONG evidence (AND condition)
         flip_now = (np.sign(desired) != np.sign(sign))
         if frozen and flip_now:
-            # permissive compelling flip
             cos_ok = (stability_series is not None) and (stability_series.loc[t] < allow_flip_cosine_thresh)
-            r_recent = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], corr_window_flip)
-            # require persistence: last K days corr < 0
-            persist_mask = []
+            # persistent negative correlation with proxy
+            persist = True
             for k in range(flip_persist_days):
                 r_k = rolling_corr(fsi.iloc[:i+1-k], proxy.iloc[:i+1-k], corr_window_flip)
-                persist_mask.append((not pd.isna(r_k)) and (r_k < -0.05))
-            persistent_neg = all(persist_mask) if persist_mask else False
-            compelling = cos_ok or persistent_neg
+                if pd.isna(r_k) or r_k >= -0.10:
+                    persist = False
+                    break
+            compelling = cos_ok and persist  # AND, not OR
             if not compelling:
                 desired = sign
                 rationale += "|frozen"
             else:
                 rationale += "|compelling_flip"
 
+        # log a flip decision (pre-application)
         if np.sign(desired) != np.sign(sign):
             flip_events.append({"date": t, "reason": rationale})
 
+        # apply sign for this step
         sign = 1.0 if desired >= 0 else -1.0
         fsi.iloc[i] *= sign
         omega.iloc[i, :] *= sign
 
-    # final safeguard on last-year correlation
+    # ---- 4) post-hoc yearly guardrail
     r_guard = rolling_corr(fsi, proxy, 252)
     if not pd.isna(r_guard) and r_guard < -rho_guard:
         fsi *= -1
@@ -833,6 +860,14 @@ def orient_fsi_and_omega(
         logging.info("[ORIENT] No sign flips required across sample.")
     else:
         logging.warning(f"[ORIENT] {len(audit)} sign flip event(s).")
+
+    # sanity print
+    try:
+        r_end = fsi.iloc[-252:].corr(proxy.iloc[-252:])
+        logging.info(f"[ORIENT] End 252d corr(FSI, proxy) = {r_end:.3f}")
+    except Exception:
+        pass
+
     return fsi, omega, audit
 
 

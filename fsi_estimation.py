@@ -120,7 +120,7 @@ def estimate_fsi_recursive_rolling_with_stability(
             if cos_sim < 0:
                 omega *= -1
                 cos_sim *= -1
-                fsi_series[t] *= -1.0   # keep FSI and ω in sync
+                # fsi_series[t] *= -1.0   # keep FSI and ω in sync
             stability_series[t] = cos_sim
             # >>> restore the unstable flag collection <<<
             if cos_sim < stability_threshold:
@@ -138,6 +138,7 @@ def estimate_fsi_recursive_rolling_with_stability(
     flagged_dates = [dates[i] for i in flagged_idx]
 
     return fsi_series_pd, omega_df, stability_series_pd, flagged_dates
+
 
 
 def compute_variable_contributions(df, omega):
