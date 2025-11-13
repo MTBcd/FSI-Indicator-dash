@@ -743,7 +743,6 @@ def _make_stress_proxy(df: pd.DataFrame, window:int=126) -> pd.Series:
 
 
 
-
 def orient_fsi_and_omega(
     fsi_series: pd.Series,
     omega_history: pd.DataFrame,
@@ -759,6 +758,7 @@ def orient_fsi_and_omega(
     flip_persist_days: int = 5,
     rho_guard: float = 0.05,
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
+
     import numpy as np, pandas as pd, logging
 
     fsi = fsi_series.copy()
@@ -769,10 +769,13 @@ def orient_fsi_and_omega(
     anchors = _pick_anchor_columns(omega)
     proxy = _make_stress_proxy(df_e).reindex(idx)
 
-    # smoothed anchor sign series
+    # smoothed anchor sign (same as before)
     if anchors:
         anchor_mean = omega[anchors].mean(axis=1)
-        anchor_sm = anchor_mean.rolling(anchor_smooth_days, min_periods=max(5, anchor_smooth_days//3)).median()
+        anchor_sm = anchor_mean.rolling(
+            anchor_smooth_days,
+            min_periods=max(5, anchor_smooth_days // 3)
+        ).median()
     else:
         anchor_sm = pd.Series(index=idx, data=np.nan)
 
@@ -780,19 +783,21 @@ def orient_fsi_and_omega(
     flip_events = []
     sign = 1.0
 
-    # helper: rolling correlation
+    # record the *desired* sign each day, but don't apply it yet
+    sign_series = pd.Series(index=idx, dtype=float)
+
     def rolling_corr(a, b, w):
         z = pd.concat([a, b], axis=1).dropna()
         if z.empty:
             return np.nan
-        return z.iloc[-w:].corr().iloc[0,1] if len(z) >= 5 else np.nan
+        return z.iloc[-w:].corr().iloc[0, 1] if len(z) >= 5 else np.nan
 
     for i, t in enumerate(idx):
-        # desired sign from anchors if available, else from proxy corr up to t
         a_val = anchor_sm.loc[t] if t in anchor_sm.index else np.nan
+
+        # 1) derive desired sign from anchors or proxy
         if pd.isna(a_val):
-            # fallback: pick sign to make corr(FSI, proxy) over a short window positive
-            w = min(126, i+1)
+            w = min(126, i + 1)
             r = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], w)
             desired = 1.0 if (pd.isna(r) or r >= 0) else -1.0
             rationale = "proxy"
@@ -800,13 +805,11 @@ def orient_fsi_and_omega(
             desired = 1.0 if a_val >= 0 else -1.0
             rationale = "anchors(smoothed)"
 
-        # check if we can freeze (stable + aligned with proxy)
+        # 2) freeze logic (same idea as before, but it only affects 'desired')
         if not frozen and stability_series is not None and i >= freeze_after_days:
-            # stable window
             stable_ok = (stability_series.reindex(idx)
                          .iloc[max(0, i-freeze_after_days+1):i+1]
                          .ge(stability_threshold)).all()
-            # proxy alignment window
             r_freeze = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], corr_window_freeze)
             align_ok = (not pd.isna(r_freeze)) and (r_freeze >= min_corr_to_freeze) and (np.sign(desired) == +1)
             if stable_ok and align_ok:
@@ -815,15 +818,15 @@ def orient_fsi_and_omega(
 
         flip_now = (np.sign(desired) != np.sign(sign))
         if frozen and flip_now:
-            # permissive compelling flip
             cos_ok = (stability_series is not None) and (stability_series.loc[t] < allow_flip_cosine_thresh)
             r_recent = rolling_corr(fsi.iloc[:i+1], proxy.iloc[:i+1], corr_window_flip)
-            # require persistence: last K days corr < 0
+
             persist_mask = []
             for k in range(flip_persist_days):
                 r_k = rolling_corr(fsi.iloc[:i+1-k], proxy.iloc[:i+1-k], corr_window_flip)
                 persist_mask.append((not pd.isna(r_k)) and (r_k < -0.05))
             persistent_neg = all(persist_mask) if persist_mask else False
+
             compelling = cos_ok or persistent_neg
             if not compelling:
                 desired = sign
@@ -835,24 +838,35 @@ def orient_fsi_and_omega(
             flip_events.append({"date": t, "reason": rationale})
 
         sign = 1.0 if desired >= 0 else -1.0
-        fsi.iloc[i] *= sign
-        omega.iloc[i, :] *= sign
+        sign_series.iloc[i] = sign
 
-    # final safeguard on last-year correlation
-    r_guard = rolling_corr(fsi, proxy, 252)
+    # === GLOBAL ORIENTATION STEP (no local jumps) ===
+    # Use the dominant sign in the last corr_window_freeze days as orientation
+    tail = sign_series.tail(corr_window_freeze if corr_window_freeze > 0 else len(sign_series))
+    global_sign = np.sign(tail.mean())  # majority vote
+    if global_sign == 0:
+        global_sign = 1.0
+
+    fsi *= global_sign
+    omega *= global_sign
+
+    # Final guard: if 1-year corr with proxy is still negative, flip once more
+    def corr_guard(a, b, w=252):
+        z = pd.concat([a, b], axis=1).dropna()
+        if z.empty:
+            return np.nan
+        return z.iloc[-w:].corr().iloc[0, 1] if len(z) >= 5 else np.nan
+
+    r_guard = corr_guard(fsi, proxy, 252)
     if not pd.isna(r_guard) and r_guard < -rho_guard:
         fsi *= -1
         omega *= -1
+        global_sign *= -1
         flip_events.append({"date": idx[-1], "reason": f"posthoc_guard_flip(r252={r_guard:.3f})"})
-        logging.warning(f"[ORIENT] Post-hoc guard flip applied (r252={r_guard:.3f}).")
 
     audit = pd.DataFrame(flip_events)
-    if audit.empty:
-        logging.info("[ORIENT] No sign flips required across sample.")
-    else:
-        logging.warning(f"[ORIENT] {len(audit)} sign flip event(s).")
+    logging.info(f"[ORIENT] global_sign={global_sign:+.0f}, r252={r_guard}")
     return fsi, omega, audit
-
 
 
 
