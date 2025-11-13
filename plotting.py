@@ -16,39 +16,39 @@ from numpy import trapz
 # chart_studio.tools.set_credentials_file(username='Tuler', api_key='EOdkt6iCFZgZvJtTdFc6')
 
 market_events = {
-    "2018-12-24": "<b>Fed hikes<br>market panic</b>",
-    "2019-08-14": "<b>Yield curve<br>inversion</b>",
-    "2020-02-24": "<b>COVID<br>Crisis</b>",
-    "2022-02-24": "<b>Russia<br>invades Ukraine</b>",
-    "2022-05-11": "<b>Fed hikes<br>to control<br>inflation</b>",
-    "2022-07-28": "<b>US GDP<br>recession fears</b>",
-    "2023-03-10": "<b>SVB<br>collapse</b>",
-    "2024-08-01": "<b>Fed starts<br>cutting rates</b>",
-    "2025-04-15": "<b>Trump tariffs</b>"
+    # "2018-12-24": "<b>Fed hikes<br>market panic</b>",
+    # "2019-08-14": "<b>Yield curve<br>inversion</b>",
+    # "2020-02-24": "<b>COVID<br>Crisis</b>",
+    # "2022-02-24": "<b>Russia<br>invades Ukraine</b>",
+    # "2022-05-11": "<b>Fed hikes<br>to control<br>inflation</b>",
+    # "2022-07-28": "<b>US GDP<br>recession fears</b>",
+    # "2023-03-10": "<b>SVB<br>collapse</b>",
+    # "2024-08-01": "<b>Fed starts<br>cutting rates</b>",
+    # "2025-04-15": "<b>Trump tariffs</b>"
 }
  
 event_heights = {
-    "2018-12-24": 0.90,
-    "2019-08-14": 0.67,
-    "2020-02-24": 0.98,
-    "2022-02-24": 0.89,
-    "2022-05-11": 0.69,
-    "2022-07-28": 0.78,
-    "2023-03-10": 0.60,
-    "2024-08-01": 0.78,
-    "2025-04-15": 0.68
+    # "2018-12-24": 0.90,
+    # "2019-08-14": 0.67,
+    # "2020-02-24": 0.98,
+    # "2022-02-24": 0.89,
+    # "2022-05-11": 0.69,
+    # "2022-07-28": 0.78,
+    # "2023-03-10": 0.60,
+    # "2024-08-01": 0.78,
+    # "2025-04-15": 0.68
 }
 
 event_heights_pnl = {
-    "2018-12-24": 0.90,
-    "2019-08-14": 0.15,
-    "2020-02-24": 0.94,
-    "2022-02-24": 0.86,
-    "2022-05-11": 0.15,
-    "2022-07-28": 0.03,
-    "2023-03-10": 0.78,
-    "2024-08-01": 0.78,
-    "2025-04-15": 0.71
+    # "2018-12-24": 0.90,
+    # "2019-08-14": 0.15,
+    # "2020-02-24": 0.94,
+    # "2022-02-24": 0.86,
+    # "2022-05-11": 0.15,
+    # "2022-07-28": 0.03,
+    # "2023-03-10": 0.78,
+    # "2024-08-01": 0.78,
+    # "2025-04-15": 0.71
 }
 
 def add_event_annotations(fig, events_dict, event_heights=None):
