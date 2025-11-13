@@ -720,10 +720,10 @@ def _make_stress_proxy(df: pd.DataFrame, window:int=126) -> pd.Series:
     """
     # features engineered to be stress-positive in your pipeline
     picks = []
-    # picks += [c for c in df.columns if ("OAS_dev" in c or "HY_IG_spread" in c)]        # credit
+    picks += [c for c in df.columns if ("OAS_dev" in c or "HY_IG_spread" in c)]        # credit
     picks += [c for c in df.columns if c.startswith(("VIX_dev","MOVE_dev","OVX_dev","VIX3M_dev"))]  # vol
-    # picks += [c for c in df.columns if c.startswith(("USD_stress","USDJPY_dev","Gold_dev"))]        # FX/safe-haven
-    # picks += [c for c in df.columns if c.startswith(("3M_TBill_stress","EFFR_stress"))]             # funding
+    picks += [c for c in df.columns if c.startswith(("USD_stress","USDJPY_dev","Gold_dev"))]        # FX/safe-haven
+    picks += [c for c in df.columns if c.startswith(("3M_TBill_stress","EFFR_stress"))]             # funding
 
     if not picks:
         return pd.Series(0.0, index=df.index)
