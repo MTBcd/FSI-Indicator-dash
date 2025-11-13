@@ -28,7 +28,7 @@ def load_configuration(config_file='config.ini'):
     config.read(config_file)
     return config
 
-def merge_data(config, max_age_hours=10):
+def merge_data(config, max_age_hours=0):
     """
     Loads processed data from cache if recent, otherwise runs full pipeline and caches result.
     """
