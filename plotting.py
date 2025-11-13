@@ -198,14 +198,14 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
                 title="Date",
                 rangeslider=dict(visible=False),
                 type='date',
-                showgrid=True,
+                showgrid=False,
                 gridwidth=1.2,
                 gridcolor='black',
                 tickformat='%Y'
             ),
             yaxis=dict(
                 title="Contribution to FSI",
-                showgrid=True,
+                showgrid=False,
                 gridwidth=1,
                 gridcolor='lightgray'
             ),
@@ -291,14 +291,14 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
                 title="Date",
                 rangeslider=dict(visible=False),
                 type='date',
-                showgrid=True,
+                showgrid=False,
                 gridwidth=1.2,
                 gridcolor='black',
                 tickformat='%Y'
             ),
             yaxis=dict(
                 title="Contribution to FSI",
-                showgrid=True,
+                showgrid=False,
                 gridwidth=1,
                 gridcolor='lightgray'
             ),
@@ -484,7 +484,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
                 tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
                 rangeslider=dict(visible=False),
                 type='date',
-                showgrid=True,
+                showgrid=False,
                 gridwidth=1.2,
                 gridcolor='black',
                 tickformatstops=[
