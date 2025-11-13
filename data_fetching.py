@@ -183,8 +183,8 @@ def get_all_series(config):
     # --- Example spreads using FRED data already loaded ---
     if '10Y Yield' in data and '2Y Yield' in data:
         data['10Y-2Y Slope'] = data['10Y Yield'] - data['2Y Yield']
-    # if '10Y Yield' in data and '3M T-Bill' in data:
-    #     data['10Y-3M Slope'] = data['10Y Yield'] - data['3M T-Bill']
+    if '10Y Yield' in data and '3M T-Bill' in data:
+        data['10Y-3M Slope'] = data['10Y Yield'] - data['3M T-Bill']
     # if 'VIX' in data and 'VIX3M' in data:
     #     data['VIX-VIX3M Spread'] = data['VIX'] - data['VIX3M']
 
