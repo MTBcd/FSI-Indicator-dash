@@ -878,42 +878,52 @@ def _make_signed_proxy(df_engineered: pd.DataFrame, window: int = 126) -> pd.Ser
 
 
 
-def orient_fsi_and_omega(fsi_series, omega_history, df_engineered,
-                         stability_series=None, window_for_proxy=126,
-                         anchors_smooth=21) -> tuple[pd.Series,pd.DataFrame,pd.DataFrame]:
+# utils.py  (replace the signature line with this)
+def orient_fsi_and_omega(
+    fsi_series,
+    omega_history,
+    df_engineered,
+    stability_series=None,
+    window_for_proxy=126,
+    anchors_smooth=21,
+    **_unused,   # <- NEW: swallow any legacy kwargs
+):
+    import numpy as np
+    import pandas as pd
 
     fsi   = fsi_series.copy()
     omega = omega_history.copy()
     idx   = fsi.index
 
-    # 1) Signed proxy aligned to estimator’s standardisation
+    # Signed, window-standardised proxy (same windowing as estimator)
     proxy = _make_signed_proxy(df_engineered.reindex(idx), window=window_for_proxy)
 
-    # 2) Bootstrap sign from early window (robust to noise)
+    # Bootstrap sign from early window
     w0     = min(252, max(60, len(fsi)//6))
     r_boot = fsi.iloc[:w0].corr(proxy.iloc[:w0])
     s_boot = 1.0 if (pd.isna(r_boot) or r_boot >= 0) else -1.0
 
-    # 3) Anchor check (sum of key loadings should be positive)
+    # Anchor vote: sum of key loadings should be positive
     anchors = _pick_anchor_columns(omega)
     if anchors:
-        a_sm = omega[anchors].sum(axis=1).rolling(anchors_smooth, min_periods=anchors_smooth//3).median()
+        a_sm = omega[anchors].sum(axis=1).rolling(anchors_smooth, min_periods=max(5, anchors_smooth//3)).median()
         s_anchor = 1.0 if a_sm.median() >= 0 else -1.0
     else:
         s_anchor = 1.0
 
-    # 4) Final sign = majority vote of {bootstrap, anchors, full-sample corr}
+    # Full-sample correlation vote
     r_full = fsi.corr(proxy)
     s_full = 1.0 if (pd.isna(r_full) or r_full >= 0) else -1.0
-    votes  = np.array([s_boot, s_anchor, s_full])
-    s      = 1.0 if (np.sign(votes).sum() >= 0) else -1.0
 
-    # 5) Apply once
+    # Majority vote
+    votes = np.array([s_boot, s_anchor, s_full])
+    s = 1.0 if (np.sign(votes).sum() >= 0) else -1.0
+
     if s < 0:
         fsi   = -fsi
         omega = -omega
 
-    # 6) Guard on most recent year (still applied **once**)
+    # One post-hoc guard on the last year
     r_last = fsi.iloc[-252:].corr(proxy.iloc[-252:])
     audit  = []
     if not pd.isna(r_last) and r_last < -0.05:
@@ -922,6 +932,7 @@ def orient_fsi_and_omega(fsi_series, omega_history, df_engineered,
         audit.append({"date": idx[-1], "reason": f"posthoc_guard_flip(r252={r_last:.3f})"})
 
     return fsi, omega, pd.DataFrame(audit)
+
 
 
 
