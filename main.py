@@ -7,7 +7,9 @@ import numpy as np
 import os
 import time
 from data_fetching import get_all_series
-from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions, compute_timevarying_contributions
+from fsi_estimation import (compute_variable_contributions, 
+                            compute_timevarying_contributions, 
+                            estimate_fsi_expanding_with_als)
 from plotting import (
     plot_group_contributions_with_regime, plot_grouped_contributions,
     plot_pnl_with_regime_ribbons, save_fsi_charts_to_html
@@ -271,13 +273,22 @@ def main():
         logging.error("Failed to merge data. Exiting.")
         return
 
-    fsi_series, omega_history, cos_sim_series, unstable_dates = estimate_fsi_recursive_rolling_with_stability(
+    # fsi_series, omega_history, cos_sim_series, unstable_dates = estimate_fsi_recursive_rolling_with_stability(
+    #     df,
+    #     window_size=int(config['fsi']['window_size']),
+    #     n_iter=int(config['fsi']['n_iter']),
+    #     stability_threshold=float(config['fsi']['stability_threshold'])
+    # )
+
+
+    min_history = int(config['fsi']['window_size'])
+
+    fsi_series, omega_history, cos_sim_series, unstable_dates = estimate_fsi_expanding_with_als(
         df,
-        window_size=int(config['fsi']['window_size']),
+        min_history=min_history,
         n_iter=int(config['fsi']['n_iter']),
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
-
 
     # freeze_after_days = 90
     # stability_threshold = 0.8
@@ -295,17 +306,31 @@ def main():
         allow_flip_cosine_thresh=0.2
     )
 
-    # after obtaining fsi_series, omega_history we chack the correlation 
-    W = int(config['fsi']['window_size'])
+    # # after obtaining fsi_series, omega_history we chack the correlation 
+    # W = int(config['fsi']['window_size'])
+    # idx_tail = fsi_series.index[-60:]
+    # mu = df.rolling(W).mean().reindex(idx_tail)
+    # sd = df.rolling(W).std().replace(0, np.nan).reindex(idx_tail)
+    # Z = (df.reindex(idx_tail) - mu) / sd
+
+    # common = omega_history.columns.intersection(Z.columns)
+    # approx_fsi = (Z[common] * omega_history.reindex(idx_tail)[common]).sum(axis=1)
+    # corr = approx_fsi.corr(fsi_series.reindex(idx_tail))
+    # logging.info(f"[QC] Corr(FSI, Σ z⊙ω) last 60d = {corr:.3f}")
+
+    min_history = int(config['fsi']['window_size'])
     idx_tail = fsi_series.index[-60:]
-    mu = df.rolling(W).mean().reindex(idx_tail)
-    sd = df.rolling(W).std().replace(0, np.nan).reindex(idx_tail)
+
+    mu = df.expanding(min_periods=min_history).mean().reindex(idx_tail)
+    sd = df.expanding(min_periods=min_history).std().replace(0, np.nan).reindex(idx_tail)
     Z = (df.reindex(idx_tail) - mu) / sd
 
     common = omega_history.columns.intersection(Z.columns)
     approx_fsi = (Z[common] * omega_history.reindex(idx_tail)[common]).sum(axis=1)
     corr = approx_fsi.corr(fsi_series.reindex(idx_tail))
     logging.info(f"[QC] Corr(FSI, Σ z⊙ω) last 60d = {corr:.3f}")
+
+
 
     # Persist audit log
     base_path = "./cache-directory"
@@ -317,11 +342,22 @@ def main():
     else:
         pd.DataFrame(columns=["date","reason"]).to_csv(orient_audit_path, index=False)
 
-    # A1: leakage-free contributions using contemporaneous ω_t and window-standardization
+
+    # # A1: leakage-free contributions using contemporaneous ω_t and window-standardization
+    # logging.info("Computing contributions...")
+    # variable_contribs = compute_timevarying_contributions(
+    #     df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
+    # )
+
     logging.info("Computing contributions...")
+    min_history = int(config['fsi']['window_size'])
     variable_contribs = compute_timevarying_contributions(
-        df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
+        df.loc[fsi_series.index],
+        omega_history,
+        min_history=min_history
     )
+
+
 
     group_map = build_dynamic_group_map(variable_contribs)  # build from actually PRESENT columns
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)

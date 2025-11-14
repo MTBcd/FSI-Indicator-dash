@@ -13,7 +13,7 @@ import logging
   
 # --- Your framework imports ---
 from main import load_configuration, merge_data
-from fsi_estimation import estimate_fsi_recursive_rolling_with_stability, compute_variable_contributions, compute_timevarying_contributions
+from fsi_estimation import compute_timevarying_contributions, estimate_fsi_expanding_with_als
 from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
@@ -353,13 +353,26 @@ def run_full_pipeline(n_clicks):
     if df is None or df.empty:
         return dash.no_update, "❌ Data loading failed", False, ""
 
+
+    # # --- Estimate FSI & ω with stability diagnostics (no leakage) ---
+    # fsi_series, omega_history, cos_sim_series, _ = estimate_fsi_recursive_rolling_with_stability(
+    #     df,
+    #     window_size=int(config['fsi']['window_size']),
+    #     n_iter=int(config['fsi']['n_iter']),
+    #     stability_threshold=float(config['fsi']['stability_threshold'])
+    # )
+
+
     # --- Estimate FSI & ω with stability diagnostics (no leakage) ---
-    fsi_series, omega_history, cos_sim_series, _ = estimate_fsi_recursive_rolling_with_stability(
+    min_history = int(config['fsi']['window_size'])
+
+    fsi_series, omega_history, cos_sim_series, _ = estimate_fsi_expanding_with_als(
         df,
-        window_size=int(config['fsi']['window_size']),
+        min_history=min_history,
         n_iter=int(config['fsi']['n_iter']),
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
+
 
     # --- C1: robust orientation + freeze + audit (already implemented in utils) ---
     fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
@@ -373,6 +386,7 @@ def run_full_pipeline(n_clicks):
         allow_flip_cosine_thresh=0.2
     )
 
+
     # Persist orientation audit (optional)
     base_path = "./cache-directory"
     os.makedirs(os.path.join(base_path, "qc"), exist_ok=True)
@@ -381,10 +395,20 @@ def run_full_pipeline(n_clicks):
     except Exception:
         pass
 
+    # # --- A1: leakage-free time-varying contributions using contemporaneous ω_t ---
+    # variable_contribs = compute_timevarying_contributions(
+    #     df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
+    # )
+
+
     # --- A1: leakage-free time-varying contributions using contemporaneous ω_t ---
+    min_history = int(config['fsi']['window_size'])
     variable_contribs = compute_timevarying_contributions(
-        df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
+        df.loc[fsi_series.index],
+        omega_history,
+        min_history=min_history
     )
+
 
     # --- C2: dynamic group mapping from present columns ---
     group_map = build_dynamic_group_map(variable_contribs)
