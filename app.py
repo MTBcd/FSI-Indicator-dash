@@ -107,14 +107,14 @@ app.layout = html.Div([
                     dcc.Checklist(
                         id='fsi-yaxis-ticks',
                         options=[{'label': 'Show Y-Ticks', 'value': 'show'}],
-                        value=['show'],
+                        value=[],   #'show'
                         style={'marginBottom': '12px'}
                     ),
                     html.Label("Shade regimes:"),
                     dcc.Checklist(
                         id='ribbon-filter',
                         options=[{'label': r, 'value': r} for r in ['Green','Yellow','Amber','Red']],
-                        value=['Amber','Red'],  # default: risk-only
+                        value=['Green','Yellow','Amber','Red'],  # default: risk-only
                         inline=True,
                         style={'marginBottom': '12px'}
                     ),
@@ -139,7 +139,7 @@ app.layout = html.Div([
                         info_icon("Herfindahl–Hirschman Index of variable contribution shares over the last 20 days. Higher HHI = more concentrated.")
                     ]),
                     html.Div(id="hhi-metrics", style={"margin": "6px 0 10px 0", "fontSize": "1.05em"}),
-                    dcc.Graph(id='fig-hhi', style={"marginBottom": "10px"}),
+                    # dcc.Graph(id='fig-hhi', style={"marginBottom": "10px"}),
                     dash_table.DataTable(
                         id='hhi-table',
                         columns=[{"name": "Variable", "id": "Variable"},
@@ -151,56 +151,56 @@ app.layout = html.Div([
                         page_size=15
                     )
                 ], style={"marginBottom": "30px"}),
-
-                # --- Improved PnL Chart Section ---
-                html.Div([
-                    html.H2([
-                        "PnL Chart with Regime Ribbons",
-                        info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
-                    ]),
-                    dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
-
-                    # Row for buttons
-                    html.Div([
-                        html.Button(
-                            "Download as Image",
-                            id="dl-pnl",
-                            n_clicks=0,
-                            className="download-btn",
-                            style={"margin-right": "auto"}
-                        ),
-                        dcc.Upload(
-                            id='upload-pnl',
-                            children=html.Button('Upload PnL File', className="download-btn", style={"background": "#666", "color": "#fff"}),
-                            accept='.xlsx,.csv',
-                            multiple=False,
-                            className="dash-uploader",
-                            style={"display": "inline-block", "margin-left": "auto"}
-                        )
-                    ],
-                        style={
-                            "display": "flex",
-                            "flexDirection": "row",
-                            "justifyContent": "space-between",
-                            "alignItems": "center",
-                            "width": "100%",
-                            "margin-bottom": "5px"
-                        }
-                    ),
-
-                    # Message BELOW upload button, right aligned
-                    html.Div(
-                        html.Span(id='upload-message', style={'color': 'red'}),
-                        style={"display": "flex", "flexDirection": "row", "justifyContent": "flex-end", "width": "100%"}
-                    ),
-
-                    # Preview always below everything
-                    html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
-
-                ], style={'margin-bottom': '30px'}),
             ], style={'width': '95%', 'margin': 'auto'})
         ]
     ),
+
+            # --- Improved PnL Chart Section ---
+            html.Div([
+                html.H2([
+                    "PnL Chart with Regime Ribbons",
+                    info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
+                ]),
+                dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
+
+                # Row for buttons
+                html.Div([
+                    html.Button(
+                        "Download as Image",
+                        id="dl-pnl",
+                        n_clicks=0,
+                        className="download-btn",
+                        style={"margin-right": "auto"}
+                    ),
+                    dcc.Upload(
+                        id='upload-pnl',
+                        children=html.Button('Upload PnL File', className="download-btn", style={"background": "#666", "color": "#fff"}),
+                        accept='.xlsx,.csv',
+                        multiple=False,
+                        className="dash-uploader",
+                        style={"display": "inline-block", "margin-left": "auto"}
+                    )
+                ],
+                    style={
+                        "display": "flex",
+                        "flexDirection": "row",
+                        "justifyContent": "space-between",
+                        "alignItems": "center",
+                        "width": "100%",
+                        "margin-bottom": "5px"
+                    }
+                ),
+
+                # Message BELOW upload button, right aligned
+                html.Div(
+                    html.Span(id='upload-message', style={'color': 'red'}),
+                    style={"display": "flex", "flexDirection": "row", "justifyContent": "flex-end", "width": "100%"}
+                ),
+
+                # Preview always below everything
+                html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
+
+            ], style={'width': '95%', 'margin': 'auto', 'margin-bottom': '30px'}),
     html.Hr(),
 
     # --- Forward-Looking & Regime Metrics ---
@@ -353,16 +353,6 @@ def run_full_pipeline(n_clicks):
     if df is None or df.empty:
         return dash.no_update, "❌ Data loading failed", False, ""
 
-
-    # # --- Estimate FSI & ω with stability diagnostics (no leakage) ---
-    # fsi_series, omega_history, cos_sim_series, _ = estimate_fsi_recursive_rolling_with_stability(
-    #     df,
-    #     window_size=int(config['fsi']['window_size']),
-    #     n_iter=int(config['fsi']['n_iter']),
-    #     stability_threshold=float(config['fsi']['stability_threshold'])
-    # )
-
-
     # --- Estimate FSI & ω with stability diagnostics (no leakage) ---
     min_history = int(config['fsi']['window_size'])
 
@@ -493,7 +483,7 @@ def run_full_pipeline(n_clicks):
         Output('prob-red-xgb', 'figure'),
         Output('regime-transition-matrix', 'figure'),
         Output('avg-time-table', 'children'), 
-        Output('fig-hhi', 'figure'),     # <-- NEW
+        # Output('fig-hhi', 'figure'),     # <-- NEW
         Output('hhi-metrics', 'children'), # <-- NEW
         Output('hhi-table', 'data'),     # <-- NEW
     ],
@@ -654,12 +644,11 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
 
     # --- HHI over last 20 rows (cheap; keep dynamic for selected window) ---
     hhi, eff_n, ranking = compute_hhi_ranking(variable_contribs, window=20)
-    fig_hhi = plot_hhi_bar(ranking, top_n=15, title_suffix="(last 20 days)")
+    # fig_hhi = plot_hhi_bar(ranking, top_n=15, title_suffix="(last 20 days)")
     if np.isnan(hhi):
         hhi_text = "HHI unavailable for the selected range."
     else:
-        hhi_text = (f"HHI = <b>{hhi:.3f}</b>  |  "
-                    f"Effective number of contributors ≈ <b>{eff_n:.1f}</b> (= 1/HHI)")
+        hhi_text = (f"HHI = <b>{hhi:.3f}</b>  |  "f"Effective number of contributors ≈ <b>{eff_n:.1f}</b> (= 1/HHI)")
 
     # Table for top contributors
     table_data = []
@@ -669,7 +658,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
 
     return (fig1, fig2, curr_regime_html, hmm_regime_html,
             fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table,
-            fig_hhi, hhi_text, table_data)
+            hhi_text, table_data)
 
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
