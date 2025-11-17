@@ -103,7 +103,7 @@ app.layout = html.Div([
                         display_format="YYYY-MM-DD",
                         style={"marginBottom": "12px"}
                         ),
-                    html.Label("Show Y-Axis Ticks:"),
+                    # html.Label("Show Y-Axis Ticks:"),
                     dcc.Checklist(
                         id='fsi-yaxis-ticks',
                         options=[{'label': 'Show Y-Ticks', 'value': 'show'}],
@@ -600,7 +600,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
             colorbar=dict(title="Prob.")
         ))
         fig_matrix.update_layout(
-            title="<b>Regime Transition Matrix<br>(Rows: FROM, Cols: TO)</b><br>",
+            title="<b>Regime Transition Matrix (Rows: FROM, Cols: TO)</b>",
             xaxis_title="To Regime", yaxis_title="From Regime",
             margin=dict(l=25, r=25, t=45, b=40),
             font=dict(size=12),
