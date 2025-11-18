@@ -57,6 +57,144 @@ def info_icon(text):
         style={"cursor": "pointer", "color": "#888", "font-size": "0.8em", "margin-left": "4px"}
     )
 
+
+def build_pnl_stats_table(pnl_series: pd.Series):
+    """
+    Build an HTML table with PnL stats similar to your screenshot.
+    pnl_series is assumed to be daily returns in decimal (e.g. 0.01 = 1%).
+    """
+    s = pnl_series.dropna()
+    if s.empty:
+        return html.Div("No PnL data for the selected period.")
+
+    total_n = len(s)
+
+    # Define bins (in decimal)
+    pos_bins = [(0.0, 0.03), (0.03, 0.05), (0.05, np.inf)]
+    neg_bins = [(-0.03, 0.0), (-0.05, -0.03), (-np.inf, -0.05)]
+    pos_labels = ["0% to 3%", "3% to 5%", "5% or more"]
+    neg_labels = ["-3% to 0%", "-5% to -3%", "-5% or less"]
+
+    def stats_for_bins(series, bins):
+        counts, pct_total, avg_pnl = [], [], []
+        for lo, hi in bins:
+            if lo == -np.inf:
+                mask = (series < hi)
+            elif hi == np.inf:
+                mask = (series >= lo)
+            else:
+                mask = (series >= lo) & (series < hi)
+            c = mask.sum()
+            counts.append(c)
+            pct_total.append(100.0 * c / total_n if total_n > 0 else 0.0)
+            if c > 0:
+                avg_pnl.append(100.0 * series[mask].mean())
+            else:
+                avg_pnl.append(np.nan)
+        return counts, pct_total, avg_pnl
+
+    # Positive & negative subsets
+    pos_mask = (s > 0)
+    neg_mask = (s < 0)
+
+    pos_counts, pos_pct_total, pos_avg = stats_for_bins(s[pos_mask], pos_bins)
+    neg_counts, neg_pct_total, neg_avg = stats_for_bins(s[neg_mask], neg_bins)
+
+    total_pos = sum(pos_counts)
+    total_neg = sum(neg_counts)
+
+    total_pos_pct = 100.0 * total_pos / total_n if total_n > 0 else 0.0
+    total_neg_pct = 100.0 * total_neg / total_n if total_n > 0 else 0.0
+    total_pos_avg = 100.0 * s[pos_mask].mean() if total_pos > 0 else np.nan
+    total_neg_avg = 100.0 * s[neg_mask].mean() if total_neg > 0 else np.nan
+
+    # Share of positive PnL per range
+    total_pos_pnl = s[pos_mask].sum()
+    pnl_share = []
+    for (lo, hi) in pos_bins:
+        if lo == 0.0:
+            mask = (s > 0) & (s < hi)
+        elif hi == np.inf:
+            mask = (s >= lo)
+        else:
+            mask = (s >= lo) & (s < hi)
+        share = 100.0 * s[mask].sum() / total_pos_pnl if total_pos_pnl != 0 else np.nan
+        pnl_share.append(share)
+
+    def fmt_pct(x):
+        return "" if np.isnan(x) else f"{x:.2f}%"
+
+    table = html.Table([
+        # Positive header
+        html.Thead(
+            html.Tr([
+                html.Th("", style={"padding": "6px 10px", "background": "#003366", "color": "white"}),
+                *[html.Th(lbl, style={"padding": "6px 10px", "background": "#003366", "color": "white"})
+                  for lbl in pos_labels],
+                html.Th("Total", style={"padding": "6px 10px", "background": "#003366", "color": "white"})
+            ])
+        ),
+        html.Tbody([
+            html.Tr([
+                html.Th("PnL Positive", colSpan=5,
+                        style={"background": "#005b96", "color": "white", "padding": "6px 10px"})
+            ]),
+            html.Tr([
+                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
+                *[html.Td(str(c), style={"padding": "4px 10px"}) for c in pos_counts],
+                html.Td(str(total_pos), style={"padding": "4px 10px"})
+            ]),
+            html.Tr([
+                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in pos_pct_total],
+                html.Td(fmt_pct(total_pos_pct), style={"padding": "4px 10px"})
+            ]),
+            html.Tr([
+                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in pos_avg],
+                html.Td(fmt_pct(total_pos_avg), style={"padding": "4px 10px"})
+            ]),
+
+            html.Tr([
+                html.Th("PnL Negative", colSpan=5,
+                        style={"background": "#005b96", "color": "white", "padding": "6px 10px", "paddingTop": "10px"})
+            ]),
+            html.Tr([
+                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
+                *[html.Td(str(c), style={"padding": "4px 10px"}) for c in neg_counts],
+                html.Td(str(total_neg), style={"padding": "4px 10px"})
+            ]),
+            html.Tr([
+                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in neg_pct_total],
+                html.Td(fmt_pct(total_neg_pct), style={"padding": "4px 10px"})
+            ]),
+            html.Tr([
+                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in neg_avg],
+                html.Td(fmt_pct(total_neg_avg), style={"padding": "4px 10px"})
+            ]),
+
+            html.Tr([
+                html.Td("% of P/L per positive range", style={
+                    "fontWeight": "bold", "padding": "6px 10px", "borderTop": "2px solid #003366"
+                }),
+                *[html.Td(fmt_pct(x), style={"padding": "6px 10px", "borderTop": "2px solid #003366"})
+                  for x in pnl_share],
+                html.Td("100.00%", style={"padding": "6px 10px", "borderTop": "2px solid #003366"})
+            ])
+        ])
+    ], style={
+        "borderCollapse": "collapse",
+        "minWidth": "520px",
+        "background": "white",
+        "boxShadow": "0 2px 8px rgba(0,0,0,0.05)",
+        "marginTop": "8px"
+    })
+
+    return table
+
+
 # --- App Layout ---
 app.layout = html.Div([
     # --- Header, Timestamp, Controls ---
@@ -80,6 +218,7 @@ app.layout = html.Div([
         )
     ], style={"display": "flex", "alignItems": "center", "gap": "10px"}),
     dcc.Store(id='fsi-store'),
+    dcc.Store(id='fsi-events-store', data=[]),
 
     # --- Main Chart Panels ---
     dcc.Loading(
@@ -154,6 +293,35 @@ app.layout = html.Div([
             ], style={'width': '95%', 'margin': 'auto'})
         ]
     ),
+
+                    # --- FSI Event Annotations Controls ---
+                html.Div([
+                    html.H3("Add Events on FSI Charts", style={"marginTop": "10px"}),
+                    html.Div([
+                        dcc.DatePickerSingle(
+                            id='fsi-event-date',
+                            display_format="YYYY-MM-DD",
+                            placeholder="Event date",
+                            style={"marginRight": "10px"}
+                        ),
+                        dcc.Input(
+                            id='fsi-event-label',
+                            type='text',
+                            placeholder='Event label (e.g. "SVB failure")',
+                            style={"marginRight": "10px", "width": "260px"}
+                        ),
+                        html.Button(
+                            "Add FSI Event",
+                            id='add-fsi-event-btn',
+                            n_clicks=0,
+                            className="download-btn"
+                        )
+                    ], style={"display": "flex", "flexDirection": "row", "alignItems": "center"}),
+                    html.Div(
+                        id='fsi-events-list',
+                        style={"marginTop": "6px", "fontSize": "0.9em", "color": "#555"}
+                    )
+                ], style={"marginBottom": "20px"}),
 
             # --- Improved PnL Chart Section ---
             html.Div([
@@ -331,6 +499,34 @@ app.layout = html.Div([
     "padding-bottom": "35px"
 })
 
+
+
+@app.callback(
+    Output('fsi-events-store', 'data'),
+    Output('fsi-events-list', 'children'),
+    Input('add-fsi-event-btn', 'n_clicks'),
+    State('fsi-event-date', 'date'),
+    State('fsi-event-label', 'value'),
+    State('fsi-events-store', 'data'),
+    prevent_initial_call=True
+)
+
+def add_fsi_event(n_clicks, date_str, label, events):
+    if not date_str or not label:
+        raise dash.exceptions.PreventUpdate
+
+    events = events or []
+    events.append({"date": date_str, "label": label})
+
+    # Simple text list of current events
+    items = [
+        html.Div(f"{i+1}. {e['date']} – {e['label']}")
+        for i, e in enumerate(events)
+    ]
+
+    return events, items
+
+
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
 @app.callback(
     [Output('fsi-store', 'data'), 
@@ -501,10 +697,11 @@ def run_full_pipeline(n_clicks):
         Input('fsi-date-range', 'end_date'),
         Input('fsi-yaxis-ticks', 'value'),
         Input('ribbon-filter','value')
-    ]
+    ],
+    State('fsi-events-store', 'data')
 )
 
-def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter):
+def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter, fsi_events):
     if data is None:
         raise dash.exceptions.PreventUpdate
 
@@ -536,6 +733,39 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
     show_ticks = 'show' in (ytick_opts or [])
     fig1.update_yaxes(showticklabels=show_ticks)
     fig2.update_yaxes(showticklabels=show_ticks)
+
+    # --- Add FSI event markers on both charts ---
+    if fsi_events and not variable_contribs.empty:
+        idx_min = variable_contribs.index.min()
+        idx_max = variable_contribs.index.max()
+        for ev in fsi_events:
+            try:
+                ev_date = pd.to_datetime(ev.get("date"))
+                label = ev.get("label", "")
+                # Only draw if in the current visible window
+                if ev_date < idx_min or ev_date > idx_max:
+                    continue
+
+                for fig in (fig1, fig2):
+                    fig.add_vline(
+                        x=ev_date,
+                        line_dash="dash",
+                        line_color="#333",
+                        opacity=0.7
+                    )
+                    fig.add_annotation(
+                        x=ev_date,
+                        y=1.02,
+                        xref="x",
+                        yref="paper",
+                        text=label,
+                        showarrow=False,
+                        textangle=90,
+                        font=dict(size=10, color="#333"),
+                        align="left"
+                    )
+            except Exception:
+                continue
 
     # Current regime = last of precomputed regimes
     curr_regime = regimes_full.iloc[-1]
@@ -670,14 +900,26 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
 
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
+# @app.callback(
+#     [Output('fig-pnl', 'figure'),
+#      Output('upload-message', 'children'),
+#      Output('pnl-preview', 'children')],
+#     [Input('upload-pnl', 'contents')],
+#     [State('upload-pnl', 'filename'), State('fsi-store', 'data')]
+# )
+
 @app.callback(
     [Output('fig-pnl', 'figure'),
      Output('upload-message', 'children'),
      Output('pnl-preview', 'children')],
-    [Input('upload-pnl', 'contents')],
-    [State('upload-pnl', 'filename'), State('fsi-store', 'data')]
+    [Input('upload-pnl', 'contents'),
+     Input('pnl-date-range', 'start_date'),
+     Input('pnl-date-range', 'end_date')],
+    [State('upload-pnl', 'filename'),
+     State('fsi-store', 'data')]
 )
-def update_pnl(upload_contents, upload_filename, fsi_data):
+
+def update_pnl(upload_contents, start_date, end_date, upload_filename, fsi_data):
     if fsi_data is None:
         return go.Figure(), "Please run analysis first.", ""
 
@@ -734,15 +976,15 @@ def update_pnl(upload_contents, upload_filename, fsi_data):
                 # Assign standardized column names and index
                 pnl_df = pnl_df.assign(**{'P/L': pnl_series}).set_index('Date').sort_index()
 
-                # Create preview table
-                preview_table = dash_table.DataTable(
-                    data=pnl_df.reset_index()[['Date', 'P/L']].head(5).to_dict('records'),
-                    columns=[{"name": i, "id": i} for i in ['Date', 'P/L']],
-                    style_table={'maxWidth': '450px'},
-                    style_cell={'font-family': 'Segoe UI, Arial', 'textAlign': 'center'},
-                    style_header={'backgroundColor': '#f2f2f2', 'fontWeight': 'bold'},
-                )
-                msg = "PnL file loaded. Preview below."
+                # Filter by selected date range (for chart & stats)
+                if start_date and end_date:
+                    mask = (pnl_df.index >= pd.to_datetime(start_date)) & \
+                           (pnl_df.index <= pd.to_datetime(end_date))
+                    pnl_df = pnl_df.loc[mask]
+
+                # Build the PnL statistics table (instead of a raw preview)
+                preview_table = build_pnl_stats_table(pnl_df['P/L'])
+                msg = "PnL file loaded. PnL statistics for the full sample are shown below."
 
         except Exception as e:
             msg = f"Error reading file: {e}"
@@ -784,7 +1026,11 @@ def set_datepicker_limits(upload_contents, upload_filename):
     pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
     min_date = pnl_df['Date'].min().date()
     max_date = pnl_df['Date'].max().date()
-    return min_date, max_date, min_date, max_date
+
+    from datetime import date
+    default_start = max(min_date, date(2019, 1, 1))
+
+    return min_date, max_date, default_start, max_date
 
 @app.callback(
     [
