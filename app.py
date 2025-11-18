@@ -696,9 +696,9 @@ def run_full_pipeline(n_clicks):
         Input('fsi-date-range', 'start_date'),
         Input('fsi-date-range', 'end_date'),
         Input('fsi-yaxis-ticks', 'value'),
-        Input('ribbon-filter','value')
+        Input('ribbon-filter','value'),
+        Input('fsi-events-store', 'data'), 
     ],
-    State('fsi-events-store', 'data')
 )
 
 def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter, fsi_events):
