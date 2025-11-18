@@ -161,7 +161,15 @@ app.layout = html.Div([
                     "PnL Chart with Regime Ribbons",
                     info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
                 ]),
-                dcc.Graph(id='fig-pnl', style={"margin-bottom": "8px"}),
+                dcc.Loading(
+                    id="loading-pnl",
+                    type="circle",           # or "dot", "cube", "graph"
+                    color="#396aff",         # matches your other loader
+                    children=dcc.Graph(
+                        id='fig-pnl',
+                        style={"margin-bottom": "8px"}
+                    )
+                ),
 
                 # Row for buttons
                 html.Div([
@@ -648,7 +656,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter)
     if np.isnan(hhi):
         hhi_text = "HHI unavailable for the selected range."
     else:
-        hhi_text = (f"HHI = <b>{hhi:.3f}</b>  |  "f"Effective number of contributors ≈ <b>{eff_n:.1f}</b> (= 1/HHI)")
+        hhi_text = (f"HHI = {hhi:.3f}  |  "f"Effective number of contributors ≈ {eff_n:.1f} (= 1/HHI)")
 
     # Table for top contributors
     table_data = []
