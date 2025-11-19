@@ -218,7 +218,7 @@ app.layout = html.Div([
         )
     ], style={"display": "flex", "alignItems": "center", "gap": "10px"}),
     dcc.Store(id='fsi-store'),
-    dcc.Store(id='fsi-events-store', data=[]),
+    # dcc.Store(id='fsi-events-store', data=[]),
 
     # --- Main Chart Panels ---
     dcc.Loading(
@@ -294,34 +294,34 @@ app.layout = html.Div([
         ]
     ),
 
-                    # --- FSI Event Annotations Controls ---
-                html.Div([
-                    html.H3("Add Events on FSI Charts", style={"marginTop": "10px"}),
-                    html.Div([
-                        dcc.DatePickerSingle(
-                            id='fsi-event-date',
-                            display_format="YYYY-MM-DD",
-                            placeholder="Event date",
-                            style={"marginRight": "10px"}
-                        ),
-                        dcc.Input(
-                            id='fsi-event-label',
-                            type='text',
-                            placeholder='Event label (e.g. "SVB failure")',
-                            style={"marginRight": "10px", "width": "260px"}
-                        ),
-                        html.Button(
-                            "Add FSI Event",
-                            id='add-fsi-event-btn',
-                            n_clicks=0,
-                            className="download-btn"
-                        )
-                    ], style={"display": "flex", "flexDirection": "row", "alignItems": "center"}),
-                    html.Div(
-                        id='fsi-events-list',
-                        style={"marginTop": "6px", "fontSize": "0.9em", "color": "#555"}
-                    )
-                ], style={"marginBottom": "20px"}),
+                #     # --- FSI Event Annotations Controls ---
+                # html.Div([
+                #     html.H3("Add Events on FSI Charts", style={"marginTop": "10px"}),
+                #     html.Div([
+                #         dcc.DatePickerSingle(
+                #             id='fsi-event-date',
+                #             display_format="YYYY-MM-DD",
+                #             placeholder="Event date",
+                #             style={"marginRight": "10px"}
+                #         ),
+                #         dcc.Input(
+                #             id='fsi-event-label',
+                #             type='text',
+                #             placeholder='Event label (e.g. "SVB failure")',
+                #             style={"marginRight": "10px", "width": "260px"}
+                #         ),
+                #         html.Button(
+                #             "Add FSI Event",
+                #             id='add-fsi-event-btn',
+                #             n_clicks=0,
+                #             className="download-btn"
+                #         )
+                #     ], style={"display": "flex", "flexDirection": "row", "alignItems": "center"}),
+                #     html.Div(
+                #         id='fsi-events-list',
+                #         style={"marginTop": "6px", "fontSize": "0.9em", "color": "#555"}
+                #     )
+                # ], style={"marginBottom": "20px"}),
 
             # --- Improved PnL Chart Section ---
             html.Div([
@@ -501,15 +501,15 @@ app.layout = html.Div([
 
 
 
-@app.callback(
-    Output('fsi-events-store', 'data'),
-    Output('fsi-events-list', 'children'),
-    Input('add-fsi-event-btn', 'n_clicks'),
-    State('fsi-event-date', 'date'),
-    State('fsi-event-label', 'value'),
-    State('fsi-events-store', 'data'),
-    prevent_initial_call=True
-)
+# @app.callback(
+#     Output('fsi-events-store', 'data'),
+#     Output('fsi-events-list', 'children'),
+#     Input('add-fsi-event-btn', 'n_clicks'),
+#     State('fsi-event-date', 'date'),
+#     State('fsi-event-label', 'value'),
+#     State('fsi-events-store', 'data'),
+#     prevent_initial_call=True
+# )
 
 def add_fsi_event(n_clicks, date_str, label, events):
     if not date_str or not label:
@@ -697,11 +697,11 @@ def run_full_pipeline(n_clicks):
         Input('fsi-date-range', 'end_date'),
         Input('fsi-yaxis-ticks', 'value'),
         Input('ribbon-filter','value'),
-        Input('fsi-events-store', 'data'), 
+        # Input('fsi-events-store', 'data'), 
     ],
 )
 
-def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter, fsi_events):
+def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter, fsi_events=False):
     if data is None:
         raise dash.exceptions.PreventUpdate
 
