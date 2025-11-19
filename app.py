@@ -734,21 +734,19 @@ def run_full_pipeline(n_clicks):
         Output('prob-red-logit', 'figure'),
         Output('prob-red-xgb', 'figure'),
         Output('regime-transition-matrix', 'figure'),
-        Output('avg-time-table', 'children'), 
-        # Output('fig-hhi', 'figure'),     # <-- NEW
-        Output('hhi-metrics', 'children'), # <-- NEW
-        Output('hhi-table', 'data'),     # <-- NEW
+        Output('avg-time-table', 'children'),
+        Output('hhi-metrics', 'children'),
+        Output('hhi-table', 'data'),
     ],
     [
         Input('fsi-store', 'data'),
         Input('fsi-date-range', 'start_date'),
         Input('fsi-date-range', 'end_date'),
         Input('fsi-yaxis-ticks', 'value'),
-        Input('ribbon-filter','value'),
-        # Input('fsi-events-store', 'data'), 
+        Input('ribbon-filter', 'value'),
+        # Input('fsi-events-store', 'data'),
     ],
 )
-
 def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter, fsi_events=False):
     if data is None:
         raise dash.exceptions.PreventUpdate
@@ -758,7 +756,12 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
     grouped_contribs  = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
     regimes_full      = pd.read_json(io.StringIO(data["regime_series"]), orient="split", typ="series")
 
-    # --- Date filtering (render-only, no computation) ---
+    # Make sure indices are DateTimeIndex
+    variable_contribs.index = pd.to_datetime(variable_contribs.index)
+    grouped_contribs.index  = pd.to_datetime(grouped_contribs.index)
+    regimes_full.index      = pd.to_datetime(regimes_full.index)
+
+    # --- Date filtering (render-only, no heavy computation) ---
     idx = variable_contribs.index
 
     if start_date:
@@ -771,18 +774,143 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
     else:
         end_ts = idx.max()
 
-    mask = (idx >= start_ts) & (idx <= end_ts)
+    # Slice by date (inclusive)
+    variable_contribs_window = variable_contribs.loc[start_ts:end_ts]
+    grouped_contribs_window  = grouped_contribs.loc[start_ts:end_ts]
+    regimes_filtered         = regimes_full.loc[start_ts:end_ts]
 
-    variable_contribs = variable_contribs.loc[mask]
-    grouped_contribs  = grouped_contribs.loc[mask]
-    regimes_filtered  = regimes_full.loc[mask]
+    # If the window has no data, return empty figs with a message
+    if variable_contribs_window.empty or grouped_contribs_window.empty:
+        fig1 = go.Figure()
+        fig1.update_layout(title="No FSI data in selected date range.")
+        fig2 = go.Figure()
+        fig2.update_layout(title="No FSI data in selected date range.")
 
-    # --- Build figures (no training here) ---
+        curr_regime_html = regime_color_text(regimes_full.iloc[-1])
+        hmm_regime_html  = regime_color_text(data.get("hmm_regime_today", "Unknown"))
+
+        # Gauges (precomputed)
+        def make_prob_gauge(prob, label):
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=float(prob) * 100.0,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': label, "font": {"size": 13}, "align": "center"},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "#e74c3c" if prob > 0.6 else "#f1c40f" if prob > 0.3 else "#27ae60"},
+                    'steps': [
+                        {'range': [0, 30], 'color': "#d4efdf"},
+                        {'range': [30, 60], 'color': "#f7f7a4"},
+                        {'range': [60, 100], 'color': "#f9c9c4"}
+                    ],
+                },
+                number={'suffix': "%"}
+            ))
+            fig.update_layout(margin=dict(l=10, r=10, t=45, b=14),
+                              paper_bgcolor="#f7f8fa", height=210)
+            return fig
+
+        fig_prob_logit = make_prob_gauge(
+            data["prob_red_logit"],
+            f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
+        )
+        fig_prob_xgb = make_prob_gauge(
+            data["prob_red_xgb"],
+            f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
+        )
+
+        # Transition matrix (precomputed, unchanged)
+        tm = pd.DataFrame(data["transition_matrix"]).fillna(0.0)
+        regimes_order = ["Green", "Yellow", "Amber", "Red"]
+        tm = tm.reindex(index=regimes_order, columns=regimes_order, fill_value=0.0)
+
+        if (tm.values.sum() == 0) or (tm.shape != (4, 4)):
+            fig_matrix = go.Figure()
+            fig_matrix.update_layout(
+                title="Transition matrix unavailable for this sample.",
+                plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa",
+                xaxis_visible=False, yaxis_visible=False
+            )
+        else:
+            z = tm.values
+            x = list(tm.columns)
+            y = list(tm.index)
+            hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}"
+                          for j in range(len(x))] for i in range(len(y))]
+            fig_matrix = go.Figure(data=go.Heatmap(
+                z=z, x=x, y=y,
+                colorscale='RdYlGn', reversescale=True,
+                hoverinfo='text', text=hovertext, zmin=0, zmax=1,
+                colorbar=dict(title="Prob.")
+            ))
+            fig_matrix.update_layout(
+                title="<b>Regime Transition Matrix (Rows: FROM, Cols: TO)</b>",
+                xaxis_title="To Regime", yaxis_title="From Regime",
+                margin=dict(l=25, r=25, t=45, b=40),
+                font=dict(size=12),
+                plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
+            )
+
+        # Average time in regime (precomputed)
+        avg_time = data.get("avg_time_in_regime", {})
+        def cell(reg): return f"{float(avg_time.get(reg, 0.0)):.1f}"
+
+        avg_time_table = html.Div([
+            html.Div([
+                html.Span("The average time spent in regime is measured in number of days.", style={
+                    "fontWeight": "bold", "fontSize": "1.17em", "marginRight": "7px"
+                }),
+                info_icon("Mean number of consecutive days spent in each regime before switching.")
+            ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
+            html.Table([
+                html.Thead(
+                    html.Tr([
+                        html.Th(reg, style={
+                            "padding": "8px 18px",
+                            "background": "#f2f3f5",
+                            "color": REGIME_COLORS[reg],
+                            "fontWeight": "bold",
+                            "fontSize": "1.09em",
+                            "borderRadius": "7px 7px 0 0"
+                        }) for reg in regimes_order
+                    ])
+                ),
+                html.Tbody([
+                    html.Tr([
+                        html.Td(cell(reg), style={
+                            "padding": "8px 18px",
+                            "fontWeight": "500",
+                            "fontSize": "1.09em"
+                        }) for reg in regimes_order
+                    ])
+                ])
+            ], style={
+                "borderCollapse": "separate",
+                "borderSpacing": "0",
+                "marginTop": "3px",
+                "background": "#fff",
+                "borderRadius": "8px",
+                "boxShadow": "0 2px 8px 0 rgba(0,0,0,0.05)",
+                "width": "auto",
+                "minWidth": "350px"
+            })
+        ], style={"marginTop": "15px", "marginBottom": "20px"})
+
+        # HHI message for empty range
+        hhi_text = "HHI unavailable for the selected range."
+        table_data = []
+
+        return (fig1, fig2, curr_regime_html, hmm_regime_html,
+                fig_prob_logit, fig_prob_xgb, fig_matrix, avg_time_table,
+                hhi_text, table_data)
+
+    # --- Normal case: non-empty window, build figures on the sliced data ---
     fig1 = plot_group_contributions_with_regime(
-        variable_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter
+        variable_contribs_window, regimes=regimes_filtered, regime_filter=ribbon_filter
     )
     fig2 = plot_grouped_contributions(
-        grouped_contribs, regimes=regimes_filtered, regime_filter=ribbon_filter
+        grouped_contribs_window, regimes=regimes_filtered, regime_filter=ribbon_filter
     )
 
     # Y-axis ticks visibility toggle
@@ -790,18 +918,16 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
     fig1.update_yaxes(showticklabels=show_ticks)
     fig2.update_yaxes(showticklabels=show_ticks)
 
-    # --- Add FSI event markers on both charts ---
-    if fsi_events and not variable_contribs.empty:
-        idx_min = variable_contribs.index.min()
-        idx_max = variable_contribs.index.max()
+    # Optional FSI events
+    if fsi_events and not variable_contribs_window.empty:
+        idx_min = variable_contribs_window.index.min()
+        idx_max = variable_contribs_window.index.max()
         for ev in fsi_events:
             try:
                 ev_date = pd.to_datetime(ev.get("date"))
                 label = ev.get("label", "")
-                # Only draw if in the current visible window
                 if ev_date < idx_min or ev_date > idx_max:
                     continue
-
                 for fig in (fig1, fig2):
                     fig.add_vline(
                         x=ev_date,
@@ -823,14 +949,14 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
             except Exception:
                 continue
 
-    # Current regime = last of precomputed regimes
+    # Current regime = last of precomputed regimes (not sliced)
     curr_regime = regimes_full.iloc[-1]
     curr_regime_html = regime_color_text(curr_regime)
 
     # HMM regime (precomputed)
     hmm_regime_html = regime_color_text(data.get("hmm_regime_today", "Unknown"))
 
-    # Gauges (precomputed AUC & probabilities)
+    # Gauges (precomputed)
     def make_prob_gauge(prob, label):
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
@@ -848,7 +974,8 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
             },
             number={'suffix': "%"}
         ))
-        fig.update_layout(margin=dict(l=10, r=10, t=45, b=14), paper_bgcolor="#f7f8fa", height=210)
+        fig.update_layout(margin=dict(l=10, r=10, t=45, b=14),
+                          paper_bgcolor="#f7f8fa", height=210)
         return fig
 
     fig_prob_logit = make_prob_gauge(
@@ -860,7 +987,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
         f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
     )
 
-    # --- Transition matrix (precomputed) ---
+    # Transition matrix (precomputed)
     tm = pd.DataFrame(data["transition_matrix"]).fillna(0.0)
     regimes_order = ["Green", "Yellow", "Amber", "Red"]
     tm = tm.reindex(index=regimes_order, columns=regimes_order, fill_value=0.0)
@@ -876,7 +1003,8 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
         z = tm.values
         x = list(tm.columns)
         y = list(tm.index)
-        hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}" for j in range(len(x))] for i in range(len(y))]
+        hovertext = [[f"From <b>{y[i]}</b> to <b>{x[j]}</b>: {z[i][j]:.2%}"
+                      for j in range(len(x))] for i in range(len(y))]
         fig_matrix = go.Figure(data=go.Heatmap(
             z=z, x=x, y=y,
             colorscale='RdYlGn', reversescale=True,
@@ -891,7 +1019,7 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
             plot_bgcolor="#f7f8fa", paper_bgcolor="#f7f8fa"
         )
 
-    # --- Average time in regime (precomputed) ---
+    # Average time in regime (precomputed)
     avg_time = data.get("avg_time_in_regime", {})
     def cell(reg): return f"{float(avg_time.get(reg, 0.0)):.1f}"
 
@@ -936,15 +1064,13 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
         })
     ], style={"marginTop": "15px", "marginBottom": "20px"})
 
-    # --- HHI over last 20 rows (cheap; keep dynamic for selected window) ---
-    hhi, eff_n, ranking = compute_hhi_ranking(variable_contribs, window=20)
-    # fig_hhi = plot_hhi_bar(ranking, top_n=15, title_suffix="(last 20 days)")
+    # --- HHI over last 20 rows of the *window* ---
+    hhi, eff_n, ranking = compute_hhi_ranking(variable_contribs_window, window=20)
     if np.isnan(hhi):
         hhi_text = "HHI unavailable for the selected range."
     else:
-        hhi_text = (f"HHI = {hhi:.3f}  |  "f"Effective number of contributors ≈ {eff_n:.1f} (= 1/HHI)")
+        hhi_text = f"HHI = {hhi:.3f}  |  Effective number of contributors ≈ {eff_n:.1f} (= 1/HHI)"
 
-    # Table for top contributors
     table_data = []
     if ranking is not None and not ranking.empty:
         top = ranking.head(20) * 100.0
@@ -956,13 +1082,6 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
 
 
 # --- 3. PnL Upload Logic (now supports CSV and preview, error feedback) ---
-# @app.callback(
-#     [Output('fig-pnl', 'figure'),
-#      Output('upload-message', 'children'),
-#      Output('pnl-preview', 'children')],
-#     [Input('upload-pnl', 'contents')],
-#     [State('upload-pnl', 'filename'), State('fsi-store', 'data')]
-# )
 
 @app.callback(
     [Output('fig-pnl', 'figure'),
