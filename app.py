@@ -59,10 +59,6 @@ def info_icon(text):
 
 
 def build_pnl_stats_table(pnl_series: pd.Series):
-    """
-    Build an HTML table with PnL stats similar to your screenshot.
-    pnl_series is assumed to be daily returns in decimal (e.g. 0.01 = 1%).
-    """
     s = pnl_series.dropna()
     if s.empty:
         return html.Div("No PnL data for the selected period.")
@@ -93,7 +89,6 @@ def build_pnl_stats_table(pnl_series: pd.Series):
                 avg_pnl.append(np.nan)
         return counts, pct_total, avg_pnl
 
-    # Positive & negative subsets
     pos_mask = (s > 0)
     neg_mask = (s < 0)
 
@@ -108,7 +103,6 @@ def build_pnl_stats_table(pnl_series: pd.Series):
     total_pos_avg = 100.0 * s[pos_mask].mean() if total_pos > 0 else np.nan
     total_neg_avg = 100.0 * s[neg_mask].mean() if total_neg > 0 else np.nan
 
-    # Share of positive PnL per range
     total_pos_pnl = s[pos_mask].sum()
     pnl_share = []
     for (lo, hi) in pos_bins:
@@ -125,63 +119,85 @@ def build_pnl_stats_table(pnl_series: pd.Series):
         return "" if np.isnan(x) else f"{x:.2f}%"
 
     table = html.Table([
-        # Positive header
         html.Thead(
             html.Tr([
-                html.Th("", style={"padding": "6px 10px", "background": "#003366", "color": "white"}),
-                *[html.Th(lbl, style={"padding": "6px 10px", "background": "#003366", "color": "white"})
+                html.Th("", style={"padding": "6px 10px", "background": "#003366",
+                                   "color": "white", "textAlign": "center"}),
+                *[html.Th(lbl, style={"padding": "6px 10px", "background": "#003366",
+                                      "color": "white", "textAlign": "center"})
                   for lbl in pos_labels],
-                html.Th("Total", style={"padding": "6px 10px", "background": "#003366", "color": "white"})
+                html.Th("Total", style={"padding": "6px 10px", "background": "#003366",
+                                        "color": "white", "textAlign": "center"})
             ])
         ),
         html.Tbody([
             html.Tr([
                 html.Th("PnL Positive", colSpan=5,
-                        style={"background": "#005b96", "color": "white", "padding": "6px 10px"})
+                        style={"background": "#005b96", "color": "white",
+                               "padding": "6px 10px", "textAlign": "center"})
             ]),
             html.Tr([
-                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
-                *[html.Td(str(c), style={"padding": "4px 10px"}) for c in pos_counts],
-                html.Td(str(total_pos), style={"padding": "4px 10px"})
+                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px",
+                                            "textAlign": "center"}),
+                *[html.Td(str(c), style={"padding": "4px 10px", "textAlign": "center"})
+                  for c in pos_counts],
+                html.Td(str(total_pos), style={"padding": "4px 10px", "textAlign": "center"})
             ]),
             html.Tr([
-                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in pos_pct_total],
-                html.Td(fmt_pct(total_pos_pct), style={"padding": "4px 10px"})
+                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px",
+                                             "textAlign": "center"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
+                  for x in pos_pct_total],
+                html.Td(fmt_pct(total_pos_pct), style={"padding": "4px 10px", "textAlign": "center"})
             ]),
             html.Tr([
-                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in pos_avg],
-                html.Td(fmt_pct(total_pos_avg), style={"padding": "4px 10px"})
+                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px",
+                                                       "textAlign": "center"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
+                  for x in pos_avg],
+                html.Td(fmt_pct(total_pos_avg), style={"padding": "4px 10px", "textAlign": "center"})
             ]),
 
             html.Tr([
                 html.Th("PnL Negative", colSpan=5,
-                        style={"background": "#005b96", "color": "white", "padding": "6px 10px", "paddingTop": "10px"})
+                        style={"background": "#005b96", "color": "white",
+                               "padding": "6px 10px", "paddingTop": "10px",
+                               "textAlign": "center"})
             ]),
             html.Tr([
-                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
-                *[html.Td(str(c), style={"padding": "4px 10px"}) for c in neg_counts],
-                html.Td(str(total_neg), style={"padding": "4px 10px"})
+                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px",
+                                            "textAlign": "center"}),
+                *[html.Td(str(c), style={"padding": "4px 10px", "textAlign": "center"})
+                  for c in neg_counts],
+                html.Td(str(total_neg), style={"padding": "4px 10px", "textAlign": "center"})
             ]),
             html.Tr([
-                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in neg_pct_total],
-                html.Td(fmt_pct(total_neg_pct), style={"padding": "4px 10px"})
+                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px",
+                                             "textAlign": "center"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
+                  for x in neg_pct_total],
+                html.Td(fmt_pct(total_neg_pct), style={"padding": "4px 10px", "textAlign": "center"})
             ]),
             html.Tr([
-                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px"}) for x in neg_avg],
-                html.Td(fmt_pct(total_neg_avg), style={"padding": "4px 10px"})
+                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px",
+                                                       "textAlign": "center"}),
+                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
+                  for x in neg_avg],
+                html.Td(fmt_pct(total_neg_avg), style={"padding": "4px 10px", "textAlign": "center"})
             ]),
 
             html.Tr([
                 html.Td("% of P/L per positive range", style={
-                    "fontWeight": "bold", "padding": "6px 10px", "borderTop": "2px solid #003366"
+                    "fontWeight": "bold", "padding": "6px 10px",
+                    "borderTop": "2px solid #003366", "textAlign": "center"
                 }),
-                *[html.Td(fmt_pct(x), style={"padding": "6px 10px", "borderTop": "2px solid #003366"})
+                *[html.Td(fmt_pct(x), style={"padding": "6px 10px",
+                                             "borderTop": "2px solid #003366",
+                                             "textAlign": "center"})
                   for x in pnl_share],
-                html.Td("100.00%", style={"padding": "6px 10px", "borderTop": "2px solid #003366"})
+                html.Td("100.00%", style={"padding": "6px 10px",
+                                          "borderTop": "2px solid #003366",
+                                          "textAlign": "center"})
             ])
         ])
     ], style={
@@ -189,7 +205,8 @@ def build_pnl_stats_table(pnl_series: pd.Series):
         "minWidth": "520px",
         "background": "white",
         "boxShadow": "0 2px 8px rgba(0,0,0,0.05)",
-        "marginTop": "8px"
+        "marginTop": "8px",
+        "textAlign": "center"
     })
 
     return table
@@ -329,10 +346,23 @@ app.layout = html.Div([
                     "PnL Chart with Regime Ribbons",
                     info_icon("Upload your PnL file. Regimes are highlighted along the PnL curve.")
                 ]),
+
+                # 👉 PnL date range selector here
+                html.Label("Select PnL date range:"),
+                dcc.DatePickerRange(
+                    id='pnl-date-range',
+                    min_date_allowed=None,
+                    max_date_allowed=None,
+                    start_date=None,
+                    end_date=None,
+                    display_format="YYYY-MM-DD",
+                    style={"marginBottom": "12px"}
+                ),
+
                 dcc.Loading(
                     id="loading-pnl",
-                    type="circle",           # or "dot", "cube", "graph"
-                    color="#396aff",         # matches your other loader
+                    type="circle",
+                    color="#396aff",
                     children=dcc.Graph(
                         id='fig-pnl',
                         style={"margin-bottom": "8px"}
@@ -350,7 +380,11 @@ app.layout = html.Div([
                     ),
                     dcc.Upload(
                         id='upload-pnl',
-                        children=html.Button('Upload PnL File', className="download-btn", style={"background": "#666", "color": "#fff"}),
+                        children=html.Button(
+                            'Upload PnL File',
+                            className="download-btn",
+                            style={"background": "#666", "color": "#fff"}
+                        ),
                         accept='.xlsx,.csv',
                         multiple=False,
                         className="dash-uploader",
@@ -712,14 +746,22 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
 
     # --- Date filtering (render-only, no computation) ---
     idx = variable_contribs.index
-    if start_date:
-        idx = idx[idx >= pd.to_datetime(start_date)]
-    if end_date:
-        idx = idx[idx <= pd.to_datetime(end_date)]
 
-    variable_contribs = variable_contribs.reindex(idx)
-    grouped_contribs  = grouped_contribs.reindex(idx)
-    regimes_filtered  = regimes_full.reindex(idx)
+    if start_date:
+        start_ts = pd.to_datetime(start_date)
+    else:
+        start_ts = idx.min()
+
+    if end_date:
+        end_ts = pd.to_datetime(end_date)
+    else:
+        end_ts = idx.max()
+
+    mask = (idx >= start_ts) & (idx <= end_ts)
+
+    variable_contribs = variable_contribs.loc[mask]
+    grouped_contribs  = grouped_contribs.loc[mask]
+    regimes_filtered  = regimes_full.loc[mask]
 
     # --- Build figures (no training here) ---
     fig1 = plot_group_contributions_with_regime(
@@ -913,8 +955,8 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
      Output('upload-message', 'children'),
      Output('pnl-preview', 'children')],
     [Input('upload-pnl', 'contents'),
-     Input('pnl-date-range', 'start_date'),
-     Input('pnl-date-range', 'end_date')],
+     Input('pnl-chart-date-range', 'start_date'),
+     Input('pnl-chart-date-range', 'end_date')],
     [State('upload-pnl', 'filename'),
      State('fsi-store', 'data')]
 )
@@ -930,7 +972,7 @@ def update_pnl(upload_contents, start_date, end_date, upload_filename, fsi_data)
 
     msg = ""
     pnl_df = None
-    preview_table = None
+    preview_table = ""   # we no longer show the stats table here
 
     if upload_contents is not None:
         try:
@@ -976,15 +1018,13 @@ def update_pnl(upload_contents, start_date, end_date, upload_filename, fsi_data)
                 # Assign standardized column names and index
                 pnl_df = pnl_df.assign(**{'P/L': pnl_series}).set_index('Date').sort_index()
 
-                # Filter by selected date range (for chart & stats)
+                # Filter by selected date range (for chart)
                 if start_date and end_date:
                     mask = (pnl_df.index >= pd.to_datetime(start_date)) & \
                            (pnl_df.index <= pd.to_datetime(end_date))
                     pnl_df = pnl_df.loc[mask]
 
-                # Build the PnL statistics table (instead of a raw preview)
-                preview_table = build_pnl_stats_table(pnl_df['P/L'])
-                msg = "PnL file loaded. PnL statistics for the full sample are shown below."
+                msg = "PnL file loaded."
 
         except Exception as e:
             msg = f"Error reading file: {e}"
@@ -1002,27 +1042,38 @@ def update_pnl(upload_contents, start_date, end_date, upload_filename, fsi_data)
 # --- Set available date range after PnL upload ---
 @app.callback(
     [
-        Output('pnl-date-range', 'min_date_allowed'),
-        Output('pnl-date-range', 'max_date_allowed'),
-        Output('pnl-date-range', 'start_date'),
-        Output('pnl-date-range', 'end_date'),
+        Output('pnl-chart-date-range', 'min_date_allowed'),
+        Output('pnl-chart-date-range', 'max_date_allowed'),
+        Output('pnl-chart-date-range', 'start_date'),
+        Output('pnl-chart-date-range', 'end_date'),
+
+        Output('pnl-dist-date-range', 'min_date_allowed'),
+        Output('pnl-dist-date-range', 'max_date_allowed'),
+        Output('pnl-dist-date-range', 'start_date'),
+        Output('pnl-dist-date-range', 'end_date'),
     ],
     Input('upload-pnl', 'contents'),
     State('upload-pnl', 'filename')
 )
+
 def set_datepicker_limits(upload_contents, upload_filename):
     if not upload_contents:
-        return None, None, None, None
+        return (None, None, None, None,
+                None, None, None, None)
+
     content_type, content_string = upload_contents.split(',')
     decoded = base64.b64decode(content_string)
     if upload_filename.lower().endswith('.csv'):
         pnl_df = pd.read_csv(io.BytesIO(decoded))
     else:
         pnl_df = pd.read_excel(io.BytesIO(decoded))
+
     pnl_df.columns = [c.strip() for c in pnl_df.columns]
     col_map = {c.lower(): c for c in pnl_df.columns}
-    if not {'date', 'p/l'}.issubset(col_map):
-        return None, None, None, None
+    if 'date' not in col_map:
+        return (None, None, None, None,
+                None, None, None, None)
+
     pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
     min_date = pnl_df['Date'].min().date()
     max_date = pnl_df['Date'].max().date()
@@ -1030,7 +1081,10 @@ def set_datepicker_limits(upload_contents, upload_filename):
     from datetime import date
     default_start = max(min_date, date(2019, 1, 1))
 
-    return min_date, max_date, default_start, max_date
+    # Same defaults for both chart & distribution ranges
+    return (min_date, max_date, default_start, max_date,
+            min_date, max_date, default_start, max_date)
+
 
 @app.callback(
     [
@@ -1076,44 +1130,89 @@ def download_figure(dl1, dl2, dl3, fig1, fig2, fig_pnl):
 
 @app.callback(
     [Output('dist-pnl-range', 'figure'),
-     Output('dist-pnl-full', 'figure')],
+     Output('dist-pnl-full', 'figure'),
+     Output('pnl-stats-table', 'children')],
     [
         Input('upload-pnl', 'contents'),
-        Input('pnl-date-range', 'start_date'),
-        Input('pnl-date-range', 'end_date')
+        Input('pnl-dist-date-range', 'start_date'),
+        Input('pnl-dist-date-range', 'end_date')
     ],
     State('upload-pnl', 'filename')
 )
+
 def update_pnl_distributions(upload_contents, start_date, end_date, upload_filename):
     if not upload_contents:
-        return go.Figure(), go.Figure()
-    import io, base64
+        return go.Figure(), go.Figure(), html.Div("Upload a PnL file to see distributions and stats.")
+
     content_type, content_string = upload_contents.split(',')
     decoded = base64.b64decode(content_string)
+
+    # Read file
     if upload_filename.lower().endswith('.csv'):
         pnl_df = pd.read_csv(io.BytesIO(decoded))
     else:
         pnl_df = pd.read_excel(io.BytesIO(decoded))
+
+    # Normalize and strip column names
     pnl_df.columns = [c.strip() for c in pnl_df.columns]
-    col_map = {c.lower(): c for c in pnl_df.columns}
-    if not {'date', 'p/l'}.issubset(col_map):
-        return go.Figure(), go.Figure()
-    pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
-    pnl_df = pnl_df.sort_values('Date')
-    # Filter by selected date range
-    if start_date and end_date:
-        mask = (pnl_df['Date'] >= pd.to_datetime(start_date)) & (pnl_df['Date'] <= pd.to_datetime(end_date))
-        pnl_df = pnl_df.loc[mask]
-    pnl_series = pnl_df[col_map['p/l']]
-    if not pnl_df.empty:
-        date0 = pnl_df['Date'].min().strftime("%b-%Y")
-        date1 = pnl_df['Date'].max().strftime("%b-%Y")
-        period_title = f"{date0} to {date1}"
+    lower_map = {c.lower(): c for c in pnl_df.columns}
+
+    # Same flexible column detection as the main PnL callback
+    date_candidates = ['date', 'datetime', 'timestamp']
+    pnl_candidates  = ['p/l', 'p&l', 'pnl', 'pl', 'return', 'ret', 'pnl%', 'p/l %', 'p&l %']
+
+    date_col = next((lower_map[c] for c in date_candidates if c in lower_map), None)
+    pnl_col  = next((lower_map[c] for c in pnl_candidates  if c in lower_map), None)
+
+    if date_col is None or pnl_col is None:
+        msg = html.Div("File must contain a Date column and a PnL column "
+                       "(accepted names: Date/Datetime/Timestamp + P/L, P&L, PnL, Return, etc.).")
+        return go.Figure(), go.Figure(), msg
+
+    # Parse dates
+    pnl_df['Date'] = pd.to_datetime(pnl_df[date_col], errors='coerce')
+    pnl_df = pnl_df.dropna(subset=['Date']).sort_values('Date')
+
+    # Parse PnL values, handle percent strings and scaling
+    pnl_series_raw = pnl_df[pnl_col]
+    if pnl_series_raw.dtype == object:
+        pnl_series_clean = pnl_series_raw.astype(str).str.replace('%', '', regex=False).str.replace(',', '')
+        pnl_series = pd.to_numeric(pnl_series_clean, errors='coerce')
+        if pnl_series.dropna().abs().max() > 1.0:
+            pnl_series = pnl_series / 100.0
     else:
-        period_title = ""
-    fig_range = plot_distribution_plotly(pnl_series, period_title, pnl_range=(-0.03, 0.03))
-    fig_full = plot_distribution_plotly(pnl_series, period_title)
-    return fig_range, fig_full
+        pnl_series = pnl_series_raw.astype(float)
+
+    # Put into a clean frame
+    pnl_df = pnl_df.assign(**{'P/L': pnl_series}).set_index('Date').sort_index()
+
+    # Filter by distribution date range (independent from chart range)
+    if start_date and end_date:
+        mask = (pnl_df.index >= pd.to_datetime(start_date)) & \
+               (pnl_df.index <= pd.to_datetime(end_date))
+        pnl_df = pnl_df.loc[mask]
+
+    if pnl_df.empty:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="No PnL data in selected range.")
+        return empty_fig, empty_fig, html.Div("No PnL data in the selected range.")
+
+    # Series for plotting
+    pnl_series_window = pnl_df['P/L']
+
+    # Title based on window
+    date0 = pnl_df.index.min().strftime("%b-%Y")
+    date1 = pnl_df.index.max().strftime("%b-%Y")
+    period_title = f"{date0} to {date1}"
+
+    fig_range = plot_distribution_plotly(pnl_series_window, period_title, pnl_range=(-0.03, 0.03))
+    fig_full  = plot_distribution_plotly(pnl_series_window, period_title)
+
+    # 👉 Dynamic stats table based on THIS window
+    stats_table = build_pnl_stats_table(pnl_series_window)
+
+    return fig_range, fig_full, stats_table
+
 
 
 if __name__ == "__main__":
