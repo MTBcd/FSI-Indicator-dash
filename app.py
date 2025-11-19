@@ -348,9 +348,9 @@ app.layout = html.Div([
                 ]),
 
                 # 👉 PnL date range selector here
-                html.Label("Select PnL date range:"),
+                html.Label("Select PnL date range (chart):"),
                 dcc.DatePickerRange(
-                    id='pnl-date-range',
+                    id='pnl-chart-date-range',
                     min_date_allowed=None,
                     max_date_allowed=None,
                     start_date=None,
@@ -510,9 +510,10 @@ app.layout = html.Div([
     # --- PnL Distribution Analysis Section ---
     html.Div([
         html.H2("PnL Distribution Analysis", style={"marginTop": "30px"}),
-        html.Label("Select PnL date range:"),
+
+        html.Label("Select PnL date range (distribution):"),
         dcc.DatePickerRange(
-            id='pnl-date-range',
+            id='pnl-dist-date-range',
             min_date_allowed=None,
             max_date_allowed=None,
             start_date=None,
@@ -520,10 +521,23 @@ app.layout = html.Div([
             display_format="YYYY-MM-DD",
             style={"marginBottom": "12px"}
         ),
+
         html.Div([
-            dcc.Graph(id='dist-pnl-range', style={"flex": "1", "minWidth": "380px", "height": "360px"}),
-            dcc.Graph(id='dist-pnl-full', style={"flex": "1", "minWidth": "380px", "height": "360px"})
-        ], style={"display": "flex", "flexDirection": "row", "gap": "30px"})
+            dcc.Graph(
+                id='dist-pnl-range',
+                style={"flex": "1", "minWidth": "380px", "height": "360px"}
+            ),
+            dcc.Graph(
+                id='dist-pnl-full',
+                style={"flex": "1", "minWidth": "380px", "height": "360px"}
+            )
+        ], style={"display": "flex", "flexDirection": "row", "gap": "30px"}),
+
+        # 👉 Container for dynamic PnL stats table at the end of this section
+        html.Div(
+            id='pnl-stats-table',
+            style={"marginTop": "20px", "display": "flex", "justifyContent": "center"}
+        ),
     ], style={"margin": "30px 0"}),
 
     dcc.Download(id="download-image"),
