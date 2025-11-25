@@ -811,6 +811,21 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
     if data is None:
         raise dash.exceptions.PreventUpdate
 
+    # --- Safely format AUC labels (handle None) ---
+    auc_logit = data.get("auc_logit", None)
+    auc_xgb   = data.get("auc_xgb", None)
+
+    def fmt_auc(auc_value):
+        try:
+            if auc_value is None:
+                return "n/a"
+            return f"{float(auc_value):.2f}"
+        except (TypeError, ValueError):
+            return "n/a"
+
+    auc_logit_label = fmt_auc(auc_logit)
+    auc_xgb_label   = fmt_auc(auc_xgb)
+
     # --- Load precomputed series/frames ---
     variable_contribs = pd.read_json(io.StringIO(data["variable_contribs"]), orient="split")
     grouped_contribs  = pd.read_json(io.StringIO(data["grouped_contribs"]), orient="split")
@@ -871,13 +886,22 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
                               paper_bgcolor="#f7f8fa", height=210)
             return fig
 
+        # fig_prob_logit = make_prob_gauge(
+        #     data["prob_red_logit"],
+        #     f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
+        # )
+        # fig_prob_xgb = make_prob_gauge(
+        #     data["prob_red_xgb"],
+        #     f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
+        # )
+
         fig_prob_logit = make_prob_gauge(
             data["prob_red_logit"],
-            f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
+            f"Logit P(Red) (AUC: {auc_logit_label})"
         )
         fig_prob_xgb = make_prob_gauge(
             data["prob_red_xgb"],
-            f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
+            f"XGBoost P(Red) (AUC: {auc_xgb_label})"
         )
 
         # Transition matrix (precomputed, unchanged)
@@ -1038,13 +1062,22 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
                           paper_bgcolor="#f7f8fa", height=210)
         return fig
 
+    # fig_prob_logit = make_prob_gauge(
+    #     data["prob_red_logit"],
+    #     f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
+    # )
+    # fig_prob_xgb = make_prob_gauge(
+    #     data["prob_red_xgb"],
+    #     f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
+    # )
+
     fig_prob_logit = make_prob_gauge(
         data["prob_red_logit"],
-        f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
+        f"Logit P(Red) (AUC: {auc_logit_label})"
     )
     fig_prob_xgb = make_prob_gauge(
         data["prob_red_xgb"],
-        f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
+        f"XGBoost P(Red) (AUC: {auc_xgb_label})"
     )
 
     # Transition matrix (precomputed)
