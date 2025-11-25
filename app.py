@@ -1440,18 +1440,45 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     Input('upload-pnl', 'contents'),
     Input('cumret-date-range', 'start_date'),
     Input('cumret-date-range', 'end_date'),
-    State('upload-pnl', 'filename')
+    State('upload-pnl', 'filename'),
+    State('fsi-store', 'data')  
 )
-def update_cumret_chart(upload_contents, start_date, end_date, upload_filename):
+def update_cumret_chart(upload_contents, start_date, end_date, upload_filename, fsi_data):
+    # Load FSI + regimes (for ribbons). If not available, we simply won't draw them.
+    fsi_series = None
+    regimes = None
+    if fsi_data is not None:
+        try:
+            fsi_series = pd.read_json(
+                io.StringIO(fsi_data["fsi_series"]), orient="split", typ="series"
+            )
+            regimes = pd.read_json(
+                io.StringIO(fsi_data["regime_series"]), orient="split", typ="series"
+            )
+        except Exception as e:
+            logging.warning(f"Could not parse FSI/regimes for cumret chart: {e}")
+    
     # If no PnL uploaded or no benchmarks, return an empty chart
+    # if (not upload_contents) or (upload_filename is None):
+    #     empty_series = pd.Series(dtype=float)
+    #     return make_cumret_figure(
+    #         neptune_returns=empty_series,
+    #         benchmark_returns=benchmark_returns,
+    #         start_date=start_date,
+    #         end_date=end_date
+    #     )
+
     if (not upload_contents) or (upload_filename is None):
         empty_series = pd.Series(dtype=float)
         return make_cumret_figure(
             neptune_returns=empty_series,
             benchmark_returns=benchmark_returns,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            fsi_series=fsi_series,      # 🔹 pass ribbons data
+            regimes=regimes
         )
+
 
     # Decode uploaded file
     content_type, content_string = upload_contents.split(',')
@@ -1509,9 +1536,9 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename):
         benchmark_returns=benchmark_returns,
         start_date=start_date,
         end_date=end_date,
+        fsi_series=fsi_series,
+        regimes=regimes
     )
-
-
 
 if __name__ == "__main__":
     import os

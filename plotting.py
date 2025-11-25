@@ -617,12 +617,13 @@ def plot_distribution_plotly(pnl_values, period_title, pnl_range=None):
     return fig
 
 
-
 def make_cumret_figure(
     neptune_returns: pd.Series,
     benchmark_returns: pd.DataFrame,
     start_date=None,
     end_date=None,
+    fsi_series: pd.Series | None = None,
+    regimes: pd.Series | None = None,
 ) -> go.Figure:
     """
     Build a cumulative return chart for NEPTUNE vs benchmarks.
@@ -630,7 +631,6 @@ def make_cumret_figure(
     NEPTUNE + benchmarks are rebased to 0% at start_date.
     """
 
-    # Color map to match your legend (4 shades of blue)
     COLOR_MAP = {
         "NEPTUNE":  "#0077b6",  # darkest
         "ACWI":     "#1fa4ff",
@@ -683,6 +683,30 @@ def make_cumret_figure(
                 ),
             )
         )
+
+    # 🔹 Add FSI regime ribbons as background (like PnL chart)
+    try:
+        if fsi_series is not None and regimes is not None:
+            # Make sure they're Series with DateTimeIndex
+            fsi_series = pd.Series(fsi_series)
+            fsi_series.index = pd.to_datetime(fsi_series.index)
+
+            if not isinstance(regimes, pd.Series):
+                regimes = pd.Series(regimes, index=fsi_series.index)
+            else:
+                regimes.index = pd.to_datetime(regimes.index)
+
+            # Restrict FSI/regimes to the cumret visible window
+            idx_min = cum_pct.index.min()
+            idx_max = cum_pct.index.max()
+            fsi_window = fsi_series.loc[idx_min:idx_max]
+            regimes_window = regimes.reindex(fsi_window.index).ffill().bfill()
+
+            if not fsi_window.empty:
+                fsi_daily, regimes_daily = _prepare_ribbons(fsi_window, regimes_window)
+                add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+    except Exception as e:
+        logging.error(f"Error adding regime ribbons to cumret chart: {e}", exc_info=True)
 
     fig.update_layout(
         title="Cumulative Returns (rebased to 0% at selected start date)",
