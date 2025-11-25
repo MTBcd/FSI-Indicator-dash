@@ -7,6 +7,8 @@ import logging
 from fredapi import Fred
 import configparser
 from datetime import datetime
+from functools import reduce
+
 
 # ======== Config Loader ==========
 
@@ -193,3 +195,128 @@ def get_all_series(config):
     df_final = df_final[df_final.index >= start_date].sort_index()
 
     return df_final
+
+
+
+# Symbols and their human-readable names for the app
+# ACWI  -> MSCI All Country World (ETF proxy)
+# ^GSPC -> S&P 500 index
+# RSP   -> S&P 500 Equal Weight ETF
+BENCHMARK_SYMBOLS = {
+    "ACWI": "MSCI ACWI",
+    "^GSPC": "S&P 500",
+    "RSP": "S&P 500 EW",
+}
+
+
+def fetch_fmp_daily_close(
+    symbol: str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """
+    Fetch daily historical closes for a symbol from FMP.
+
+    Returns
+    -------
+    DataFrame with columns ['date', <symbol>], sorted by date ascending.
+    """
+    base_url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
+    params = {
+        "apikey": api_key,
+        "serietype": "line",  # daily series
+    }
+    if start_date:
+        params["from"] = start_date
+    if end_date:
+        params["to"] = end_date
+
+    resp = requests.get(base_url, params=params)
+    resp.raise_for_status()
+    data = resp.json()
+
+    if "historical" not in data or not data["historical"]:
+        raise ValueError(f"No historical data returned for {symbol}")
+
+    df = pd.DataFrame(data["historical"])
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")[["date", "close"]]
+    df = df.rename(columns={"close": symbol})
+    return df
+
+
+def get_benchmark_prices(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    api_key: str | None = None,
+) -> pd.DataFrame:
+    """
+    Download daily close prices for ACWI, ^GSPC, and RSP from FMP.
+
+    Parameters
+    ----------
+    start_date, end_date : str or None
+        Optional date boundaries in 'YYYY-MM-DD' format.
+    api_key : str or None
+        FMP API key. If None, uses FMP_API_KEY.
+
+    Returns
+    -------
+    prices : DataFrame
+        Index: DateTimeIndex named 'date'
+        Columns: ['MSCI ACWI', 'S&P 500', 'S&P 500 EW']
+    """
+    if api_key is None:
+        api_key = config['data']['fred_api_key']
+
+    series_list: list[pd.DataFrame] = []
+    for sym in BENCHMARK_SYMBOLS.keys():
+        df_sym = fetch_fmp_daily_close(sym, api_key, start_date, end_date)
+        series_list.append(df_sym)
+
+    # Merge on 'date' (outer join to keep all dates), then sort
+    prices = reduce(
+        lambda left, right: pd.merge(left, right, on="date", how="outer"),
+        series_list,
+    ).sort_values("date")
+
+    # Rename columns to human-readable names
+    rename_cols = {sym: human for sym, human in BENCHMARK_SYMBOLS.items()}
+    prices = prices.rename(columns=rename_cols)
+
+    prices = prices.set_index("date")
+    prices.index.name = "Date"
+
+    return prices
+
+
+def get_benchmark_returns(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    api_key: str | None = None,
+) -> pd.DataFrame:
+    """
+    Get DAILY simple returns for benchmarks, in decimal form.
+
+    Parameters
+    ----------
+    start_date, end_date : str or None
+        Optional date boundaries in 'YYYY-MM-DD' format.
+    api_key : str or None
+        FMP API key. If None, uses FMP_API_KEY.
+
+    Returns
+    -------
+    returns : DataFrame
+        Index: Date (DateTimeIndex)
+        Columns: ['MSCI ACWI', 'S&P 500', 'S&P 500 EW']
+        Values: daily simple returns (e.g. 0.01 = 1%)
+    """
+    prices = get_benchmark_prices(start_date=start_date, end_date=end_date, api_key=api_key)
+
+    # Forward-fill missing prices (holidays / different calendars), then pct_change
+    prices_ffill = prices.sort_index().ffill()
+    rets = prices_ffill.pct_change().dropna(how="all")
+
+    return rets

@@ -18,10 +18,11 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
-    plot_distribution_plotly, plot_hhi_bar
+    plot_distribution_plotly, plot_hhi_bar, plot_cumulative_returns
 )
+from data_fetching import get_benchmark_returns
 from utils import (
-    aggregate_contributions_by_group,
+    aggregate_contributions_by_group, classify_regime_fsi_improved,
     get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, build_dynamic_group_map, orient_fsi_and_omega,
     classify_risk_regime_hybrid, average_time_in_regime, classify_adaptive_regime_hybrid_fallback,
     compute_hhi_ranking
@@ -39,6 +40,42 @@ cache = diskcache.Cache("./cache-directory")
 
 app = dash.Dash(__name__)
 server = app.server
+
+
+# --- Benchmark returns for cumulative chart (SP500, SP500 EQ, MSCI ACWI) ---
+try:
+    benchmark_returns = get_benchmark_returns()
+    benchmark_returns["Date"] = pd.to_datetime(benchmark_returns["Date"])
+    benchmark_returns = benchmark_returns.set_index("Date").sort_index()
+
+    # Normalize column names
+    col_map = {c.lower(): c for c in benchmark_returns.columns}
+    # expected logical names
+    sp500_col = next((col_map[c] for c in col_map if c in ["sp500", "s&p500", "s&p 500"]), None)
+    sp500_eq_col = next((col_map[c] for c in col_map if c in ["sp500_eq", "s&p500_eq", "s&p 500 ew"]), None)
+    msci_col = next((col_map[c] for c in col_map if c in ["msci_acwi", "msci all world", "msci all country"]), None)
+
+    keep_cols = {}
+    if sp500_col:
+        keep_cols["S&P 500"] = sp500_col
+    if sp500_eq_col:
+        keep_cols["S&P 500 EW"] = sp500_eq_col
+    if msci_col:
+        keep_cols["MSCI ACWI"] = msci_col
+
+    benchmark_returns = benchmark_returns[list(keep_cols.values())].rename(
+        columns={v: k for k, v in keep_cols.items()}
+    )
+
+    # Convert to decimal returns if needed (heuristic: if max abs > 1, assume percent)
+    max_abs = benchmark_returns.abs().max().max()
+    if pd.notna(max_abs) and max_abs > 1.0:
+        benchmark_returns = benchmark_returns / 100.0
+
+except Exception as e:
+    logging.warning(f"Could not load benchmark returns: {e}")
+    benchmark_returns = pd.DataFrame()
+
 
 def regime_color_text(regime):
     # Returns an html span with correct color and bold text for regime
@@ -411,6 +448,29 @@ app.layout = html.Div([
                 html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
 
             ], style={'width': '95%', 'margin': 'auto', 'margin-bottom': '30px'}),
+
+            # ========= NEW: Cumulative Returns vs Benchmarks =========
+            html.H3([
+                "Cumulative Returns vs Benchmarks",
+                info_icon("Cumulative performance of NEPTUNE vs S&P 500, S&P 500 equal-weighted, and MSCI ACWI.")
+            ], style={"marginTop": "18px"}),
+
+            html.Label("Select date range (cumulative returns):"),
+            dcc.DatePickerRange(
+                id='cumret-date-range',
+                min_date_allowed=None,
+                max_date_allowed=None,
+                start_date=None,
+                end_date=None,
+                display_format="YYYY-MM-DD",
+                style={"marginBottom": "10px"}
+            ),
+
+            dcc.Graph(
+                id='fig-cumret',
+                style={"margin-bottom": "20px"}
+            ),
+
     html.Hr(),
 
     # --- Forward-Looking & Regime Metrics ---
@@ -665,7 +725,7 @@ def run_full_pipeline(n_clicks):
         pass
 
     # --- Regime classification (fixed, not recomputed on UI tweaks) ---
-    regimes_full = classify_adaptive_regime_hybrid_fallback(variable_contribs['FSI'], quantile_window=1260)
+    regimes_full = classify_regime_fsi_improved(variable_contribs['FSI'])
 
     # Align DF and attach regimes (for any lightweight displays later)
     df_aligned = df.loc[fsi_series.index].copy()
@@ -1184,14 +1244,20 @@ def update_pnl(upload_contents, start_date, end_date, upload_filename, fsi_data)
         Output('pnl-dist-date-range', 'max_date_allowed'),
         Output('pnl-dist-date-range', 'start_date'),
         Output('pnl-dist-date-range', 'end_date'),
+
+        Output('cumret-date-range', 'min_date_allowed'),
+        Output('cumret-date-range', 'max_date_allowed'),
+        Output('cumret-date-range', 'start_date'),
+        Output('cumret-date-range', 'end_date'),
     ],
     Input('upload-pnl', 'contents'),
     State('upload-pnl', 'filename')
 )
-
 def set_datepicker_limits(upload_contents, upload_filename):
     if not upload_contents:
+        # 12 Nones (for 3 DatePickerRange components)
         return (None, None, None, None,
+                None, None, None, None,
                 None, None, None, None)
 
     content_type, content_string = upload_contents.split(',')
@@ -1205,6 +1271,7 @@ def set_datepicker_limits(upload_contents, upload_filename):
     col_map = {c.lower(): c for c in pnl_df.columns}
     if 'date' not in col_map:
         return (None, None, None, None,
+                None, None, None, None,
                 None, None, None, None)
 
     pnl_df['Date'] = pd.to_datetime(pnl_df[col_map['date']])
@@ -1214,9 +1281,12 @@ def set_datepicker_limits(upload_contents, upload_filename):
     from datetime import date
     default_start = max(min_date, date(2019, 1, 1))
 
-    # Same defaults for both chart & distribution ranges
-    return (min_date, max_date, default_start, max_date,
-            min_date, max_date, default_start, max_date)
+    # Use same defaults for chart, distribution, and cumulative returns
+    return (
+        min_date, max_date, default_start, max_date,  # pnl-chart-date-range
+        min_date, max_date, default_start, max_date,  # pnl-dist-date-range
+        min_date, max_date, default_start, max_date   # cumret-date-range
+    )
 
 
 @app.callback(
@@ -1345,6 +1415,83 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     stats_table = build_pnl_stats_table(pnl_series_window)
 
     return fig_range, fig_full, stats_table
+
+
+@app.callback(
+    Output('fig-cumret', 'figure'),
+    Input('upload-pnl', 'contents'),
+    Input('cumret-date-range', 'start_date'),
+    Input('cumret-date-range', 'end_date'),
+    State('upload-pnl', 'filename')
+)
+def update_cumret_chart(upload_contents, start_date, end_date, upload_filename):
+    # If no PnL uploaded or no benchmarks, return an empty chart
+    if (not upload_contents) or (upload_filename is None):
+        empty_series = pd.Series(dtype=float)
+        return plot_cumulative_returns(
+            neptune_returns=empty_series,
+            benchmark_returns=benchmark_returns,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+    # Decode uploaded file
+    content_type, content_string = upload_contents.split(',')
+    decoded = base64.b64decode(content_string)
+
+    # Read file
+    if upload_filename.lower().endswith('.csv'):
+        pnl_df = pd.read_csv(io.BytesIO(decoded))
+    else:
+        pnl_df = pd.read_excel(io.BytesIO(decoded))
+
+    # Normalize and strip column names
+    pnl_df.columns = [c.strip() for c in pnl_df.columns]
+    lower_map = {c.lower(): c for c in pnl_df.columns}
+
+    # Same flexible detection as in update_pnl / distributions
+    date_candidates = ['date', 'datetime', 'timestamp']
+    pnl_candidates  = ['p/l', 'p&l', 'pnl', 'pl', 'return', 'ret', 'pnl%', 'p/l %', 'p&l %']
+
+    date_col = next((lower_map[c] for c in date_candidates if c in lower_map), None)
+    pnl_col  = next((lower_map[c] for c in pnl_candidates  if c in lower_map), None)
+
+    if date_col is None or pnl_col is None:
+        empty_series = pd.Series(dtype=float)
+        return plot_cumulative_returns(
+            neptune_returns=empty_series,
+            benchmark_returns=benchmark_returns,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+    # Parse dates
+    pnl_df['Date'] = pd.to_datetime(pnl_df[date_col], errors='coerce')
+    pnl_df = pnl_df.dropna(subset=['Date']).sort_values('Date')
+
+    # Parse PnL values, handle percent strings and scaling
+    pnl_series_raw = pnl_df[pnl_col]
+    if pnl_series_raw.dtype == object:
+        pnl_series_clean = pnl_series_raw.astype(str).str.replace('%', '', regex=False).str.replace(',', '')
+        pnl_series = pd.to_numeric(pnl_series_clean, errors='coerce')
+        if pnl_series.dropna().abs().max() > 1.0:
+            pnl_series = pnl_series / 100.0
+    else:
+        pnl_series = pnl_series_raw.astype(float)
+
+    # NEPTUNE returns series with Date index
+    neptune_returns = pd.Series(pnl_series.values, index=pnl_df['Date'])
+    neptune_returns = neptune_returns.dropna()
+    neptune_returns.index.name = 'Date'
+    neptune_returns.name = 'NEPTUNE'
+
+    # Build figure (plot_cumulative_returns should rebase at start_date)
+    return plot_cumulative_returns(
+        neptune_returns=neptune_returns,
+        benchmark_returns=benchmark_returns,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 

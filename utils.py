@@ -741,31 +741,6 @@ def _make_stress_proxy(df: pd.DataFrame, window:int=126) -> pd.Series:
 
 
 
-# def _make_signed_proxy(df_engineered: pd.DataFrame, window: int = 126) -> pd.Series:
-#     # pick stress-positive engineered features only
-#     picks = []
-#     picks += [c for c in df_engineered.columns if "OAS_dev" in c]                           # Credit wider ↑stress
-#     picks += [c for c in df_engineered.columns if c.startswith(("VIX_dev","MOVE_dev","OVX_dev","VIX3M_dev"))]
-#     picks += [c for c in df_engineered.columns if c.startswith(("USD_stress","USDJPY_dev","Gold_dev"))]
-#     picks += [c for c in df_engineered.columns if c.startswith(("3M_TBill_stress","EFFR_stress",
-#                                                                 "10Y_rate_dev","10Y_3M_inversion_dev"))]
-#     if not picks:
-#         return pd.Series(0.0, index=df_engineered.index)
-
-#     X = df_engineered[picks].copy()
-#     mu = X.rolling(window).mean()
-#     sd = X.rolling(window).std().replace(0, np.nan)
-#     Z  = (X - mu) / sd                       # same standardisation as the estimator
-#     proxy = Z.mean(axis=1)                   # **signed** average of stress-positive z-scores
-#     return proxy.ewm(span=21, min_periods=5).mean()
-
-
-
-
-
-
-
-
 
 def orient_fsi_and_omega(
     fsi_series: pd.Series,
@@ -884,3 +859,174 @@ def orient_fsi_and_omega(
 ########################################################
 ########################################################
 ########################################################
+
+
+
+
+
+
+
+
+def classify_regime_global_fsi(
+    fsi_series: pd.Series,
+    quantiles=(0.40, 0.80, 0.96)
+) -> pd.Series:
+    """
+    Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
+    This is the anchor regime: time-invariant thresholds.
+
+    Green:  FSI <= q[0]
+    Yellow: q[0] < FSI <= q[1]
+    Amber:  q[1] < FSI <= q[2]
+    Red:    FSI > q[2]
+    """
+    fsi = fsi_series.dropna()
+    if fsi.empty:
+        return pd.Series(index=fsi_series.index, dtype="object")
+
+    q1, q2, q3 = fsi.quantile(quantiles)
+
+    regimes = pd.Series(index=fsi_series.index, dtype="object")
+
+    regimes[fsi <= q1] = "Green"
+    regimes[(fsi > q1) & (fsi <= q2)] = "Yellow"
+    regimes[(fsi > q2) & (fsi <= q3)] = "Amber"
+    regimes[fsi > q3] = "Red"
+
+    # Fill any leading/trailing NaNs conservatively as Yellow
+    regimes = regimes.reindex(fsi_series.index).ffill().bfill().fillna("Yellow")
+    return regimes
+
+
+
+
+def fsi_vol_spike_flags(
+    fsi_series: pd.Series,
+    lambda_=0.97,
+    change_quantile=0.95,
+    level_quantile=0.60,
+    min_history: int = 60
+) -> pd.Series:
+    """
+    FSI-only volatility spike detector:
+    - Compute EWMA volatility of FSI.
+    - Flag spike when:
+        * change in vol > change_quantile of its own history, AND
+        * vol level > level_quantile of its own distribution.
+    """
+    vol = ewma_volatility(fsi_series, lambda_=lambda_)  # already FSI-only
+    dvol = vol.diff()
+
+    # Restrict to build thresholds only where we have enough history
+    valid = dvol.dropna()
+    if len(valid) < min_history:
+        return pd.Series(False, index=fsi_series.index)
+
+    change_thr = valid.quantile(change_quantile)
+    level_thr  = vol.dropna().quantile(level_quantile)
+
+    flags = (dvol > change_thr) & (vol > level_thr)
+    return flags.reindex(fsi_series.index).fillna(False)
+
+
+
+
+
+REGIME_ORDER = ["Green", "Yellow", "Amber", "Red"]
+REGIME_TO_INT = {r: i for i, r in enumerate(REGIME_ORDER)}
+INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
+
+
+def _upgrade_one_notch(regime_series: pd.Series, spike_flags: pd.Series,
+                       fsi_series: pd.Series, q1: float) -> pd.Series:
+    """
+    Upgrade regime by one notch on spike days, but only when FSI > q1
+    (i.e., don't create Yellow in very low FSI environment).
+    """
+    out = regime_series.copy()
+    base_int = regime_series.map(REGIME_TO_INT)
+
+    mask = spike_flags & (fsi_series > q1)
+    base_int_spike = base_int.where(~mask, np.minimum(base_int + 1, len(REGIME_ORDER) - 1))
+
+    return base_int_spike.map(INT_TO_REGIME)
+
+
+
+def classify_regime_fsi_improved(
+    fsi_series: pd.Series,
+    quantiles=(0.40, 0.80, 0.96),
+    lambda_=0.97,
+    change_quantile=0.95,
+    level_quantile=0.60,
+    min_history_spike: int = 60,
+    min_run_length: int = 3,
+) -> pd.Series:
+    """
+    Canonical FSI-only 4-color regime classifier.
+
+    Steps:
+      1) Base regime from *global* FSI quantiles.
+      2) Detect FSI-only volatility spikes (EWMA vol level + change).
+      3) On spike days with FSI > q1, upgrade regime by ONE notch (Green→Yellow→Amber→Red).
+      4) Smooth regimes: any run shorter than min_run_length days is merged into the previous regime.
+    """
+    fsi = fsi_series.copy()
+
+    # 1. Base global regime & thresholds
+    fsi_nonnull = fsi.dropna()
+    if fsi_nonnull.empty:
+        return pd.Series(index=fsi.index, dtype="object")
+    q1, q2, q3 = fsi_nonnull.quantile(quantiles)
+
+    base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
+
+    # 2. Spike flags FSI-only
+    spikes = fsi_vol_spike_flags(
+        fsi,
+        lambda_=lambda_,
+        change_quantile=change_quantile,
+        level_quantile=level_quantile,
+        min_history=min_history_spike,
+    )
+
+    # 3. Upgrade by one notch where spike & FSI > q1
+    upgraded_regime = _upgrade_one_notch(base_regime, spikes, fsi, q1=q1)
+
+    # 4. Smooth/hysteresis
+    smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
+
+    return smoothed_regime
+
+
+
+
+def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
+    """
+    Post-process regime series: any run shorter than min_run is merged into the previous regime.
+    This reduces one-day whipsaws without changing the longer regime structure.
+    """
+    s = regimes.copy().reset_index(drop=True)
+    out = s.copy()
+
+    n = len(s)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and s.iloc[j + 1] == s.iloc[i]:
+            j += 1
+        run_len = j - i + 1
+        if run_len < min_run and i > 0:
+            out.iloc[i:j + 1] = out.iloc[i - 1]
+        i = j + 1
+
+    # Put back original index
+    out.index = regimes.index
+    return out
+
+
+
+
+
+
+
