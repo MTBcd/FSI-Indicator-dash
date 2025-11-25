@@ -618,7 +618,6 @@ def plot_distribution_plotly(pnl_values, period_title, pnl_range=None):
 
 
 
-
 def make_cumret_figure(
     neptune_returns: pd.Series,
     benchmark_returns: pd.DataFrame,
@@ -628,30 +627,27 @@ def make_cumret_figure(
     """
     Build a cumulative return chart for NEPTUNE vs benchmarks.
 
-    Parameters
-    ----------
-    neptune_returns : pd.Series
-        Daily returns for NEPTUNE (decimal, e.g. 0.01 = 1%), indexed by date.
-    benchmark_returns : pd.DataFrame
-        Daily returns for benchmarks, columns e.g. ['MSCI ACWI', 'S&P 500', 'S&P 500 EW'].
-    start_date, end_date : str or datetime or None
-        Date range to display. Cumulative returns are rebased at start_date.
-
-    Returns
-    -------
-    fig : plotly.graph_objects.Figure
-        Cumulative performance in percent, rebased to 0% at start_date.
+    NEPTUNE + benchmarks are rebased to 0% at start_date.
     """
+
+    # Color map to match your legend (4 shades of blue)
+    COLOR_MAP = {
+        "NEPTUNE":  "#0077b6",  # darkest
+        "ACWI":     "#1fa4ff",
+        "SPX":      "#7fc8ff",
+        "SPXETWR":  "#cfe9ff",  # lightest
+    }
+    DEFAULT_COLOR = "#555555"
+
     if neptune_returns is None or neptune_returns.empty:
         return go.Figure()
 
     if benchmark_returns is None or benchmark_returns.empty:
-        # Just plot NEPTUNE if no benchmarks
         bench = pd.DataFrame(index=neptune_returns.index)
     else:
         bench = benchmark_returns.copy()
 
-    # Align date range
+    # Combine NEPTUNE + benchmarks
     all_data = pd.concat(
         [neptune_returns.rename("NEPTUNE"), bench],
         axis=1
@@ -660,7 +656,7 @@ def make_cumret_figure(
     if all_data.empty:
         return go.Figure()
 
-    # Apply date range slice
+    # Apply date filters
     if start_date is not None:
         all_data = all_data[all_data.index >= pd.to_datetime(start_date)]
     if end_date is not None:
@@ -669,15 +665,11 @@ def make_cumret_figure(
     if all_data.empty:
         return go.Figure()
 
-    # Daily returns → cumulative (1 + r).cumprod() - 1
-    cum = (1 + all_data).cumprod() - 1
+    # Daily returns → cumulative returns, rebased at start
+    cum = (1.0 + all_data).cumprod() - 1.0
+    cum_pct = cum * 100.0  # in percent
 
-    # Convert to percent
-    cum_pct = cum * 100.0
-
-    # Build figure
     fig = go.Figure()
-
     for col in cum_pct.columns:
         fig.add_trace(
             go.Scatter(
@@ -685,15 +677,25 @@ def make_cumret_figure(
                 y=cum_pct[col],
                 mode="lines",
                 name=col,
+                line=dict(
+                    width=2,
+                    color=COLOR_MAP.get(col, DEFAULT_COLOR),
+                ),
             )
         )
 
     fig.update_layout(
-        title="Cumulative Returns (rebased to 0% at start date)",
+        title="Cumulative Returns (rebased to 0% at selected start date)",
         xaxis_title="Date",
         yaxis_title="Cumulative Return (%)",
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1.0,
+        ),
         margin=dict(l=40, r=10, t=60, b=40),
     )
 

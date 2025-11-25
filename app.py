@@ -42,40 +42,36 @@ app = dash.Dash(__name__)
 server = app.server
 
 
-# --- Benchmark returns for cumulative chart (SP500, SP500 EQ, MSCI ACWI) ---
+# --- Benchmark returns for cumulative chart (ACWI, SPX, SPXETWR) ---
 try:
     benchmark_returns = get_benchmark_returns()
     benchmark_returns["Date"] = pd.to_datetime(benchmark_returns["Date"])
     benchmark_returns = benchmark_returns.set_index("Date").sort_index()
 
-    # Normalize column names
-    col_map = {c.lower(): c for c in benchmark_returns.columns}
-    # expected logical names
-    sp500_col = next((col_map[c] for c in col_map if c in ["sp500", "s&p500", "s&p 500"]), None)
-    sp500_eq_col = next((col_map[c] for c in col_map if c in ["sp500_eq", "s&p500_eq", "s&p 500 ew"]), None)
-    msci_col = next((col_map[c] for c in col_map if c in ["msci_acwi", "msci all world", "msci all country"]), None)
+    # Map whatever raw names we get to nice labels used in the chart / legend
+    rename_map = {}
+    for c in benchmark_returns.columns:
+        cl = c.lower()
+        if "acwi" in cl:
+            rename_map[c] = "ACWI"
+        elif cl in ("^gspc", "gspc", "spx", "sp500", "s&p500", "s&p 500"):
+            rename_map[c] = "SPX"
+        elif cl in ("rsp", "spxetwr", "spx etwr", "sp500 ew", "sp500_eq", "s&p500_eq"):
+            rename_map[c] = "SPXETWR"
 
-    keep_cols = {}
-    if sp500_col:
-        keep_cols["S&P 500"] = sp500_col
-    if sp500_eq_col:
-        keep_cols["S&P 500 EW"] = sp500_eq_col
-    if msci_col:
-        keep_cols["MSCI ACWI"] = msci_col
-
-    benchmark_returns = benchmark_returns[list(keep_cols.values())].rename(
-        columns={v: k for k, v in keep_cols.items()}
-    )
+    if rename_map:
+        benchmark_returns = benchmark_returns.rename(columns=rename_map)
 
     # Convert to decimal returns if needed (heuristic: if max abs > 1, assume percent)
-    max_abs = benchmark_returns.abs().max().max()
-    if pd.notna(max_abs) and max_abs > 1.0:
-        benchmark_returns = benchmark_returns / 100.0
+    numeric = benchmark_returns.select_dtypes(include=[np.number])
+    if not numeric.empty:
+        max_abs = numeric.abs().max().max()
+        if pd.notna(max_abs) and max_abs > 1.0:
+            benchmark_returns[numeric.columns] = numeric / 100.0
 
 except Exception as e:
     logging.warning(f"Could not load benchmark returns: {e}")
     benchmark_returns = pd.DataFrame()
-
 
 def regime_color_text(regime):
     # Returns an html span with correct color and bold text for regime
