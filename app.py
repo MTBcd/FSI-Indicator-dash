@@ -18,7 +18,7 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
-    plot_distribution_plotly, plot_hhi_bar, plot_cumulative_returns
+    plot_distribution_plotly, plot_hhi_bar, make_cumret_figure
 )
 from data_fetching import get_benchmark_returns
 from utils import (
@@ -1428,7 +1428,7 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename):
     # If no PnL uploaded or no benchmarks, return an empty chart
     if (not upload_contents) or (upload_filename is None):
         empty_series = pd.Series(dtype=float)
-        return plot_cumulative_returns(
+        return make_cumret_figure(
             neptune_returns=empty_series,
             benchmark_returns=benchmark_returns,
             start_date=start_date,
@@ -1458,7 +1458,7 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename):
 
     if date_col is None or pnl_col is None:
         empty_series = pd.Series(dtype=float)
-        return plot_cumulative_returns(
+        return make_cumret_figure(
             neptune_returns=empty_series,
             benchmark_returns=benchmark_returns,
             start_date=start_date,
@@ -1485,8 +1485,8 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename):
     neptune_returns.index.name = 'Date'
     neptune_returns.name = 'NEPTUNE'
 
-    # Build figure (plot_cumulative_returns should rebase at start_date)
-    return plot_cumulative_returns(
+    # Build figure (make_cumret_figure should rebase at start_date)
+    return make_cumret_figure(
         neptune_returns=neptune_returns,
         benchmark_returns=benchmark_returns,
         start_date=start_date,
