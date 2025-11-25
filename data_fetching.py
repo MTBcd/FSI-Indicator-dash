@@ -268,7 +268,7 @@ def get_benchmark_prices(
         Columns: ['MSCI ACWI', 'S&P 500', 'S&P 500 EW']
     """
     if api_key is None:
-        api_key = config['data']['fred_api_key']
+        api_key = config['data']['fmp_api_key']
 
     series_list: list[pd.DataFrame] = []
     for sym in BENCHMARK_SYMBOLS.keys():

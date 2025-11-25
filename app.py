@@ -41,33 +41,22 @@ cache = diskcache.Cache("./cache-directory")
 app = dash.Dash(__name__)
 server = app.server
 
-
 # --- Benchmark returns for cumulative chart (ACWI, SPX, SPXETWR) ---
 try:
-    benchmark_returns = get_benchmark_returns()
-    benchmark_returns["Date"] = pd.to_datetime(benchmark_returns["Date"])
-    benchmark_returns = benchmark_returns.set_index("Date").sort_index()
+    # Already a DateTimeIndex named "Date"
+    benchmark_returns = get_benchmark_returns().sort_index()
 
-    # Map whatever raw names we get to nice labels used in the chart / legend
-    rename_map = {}
-    for c in benchmark_returns.columns:
-        cl = c.lower()
-        if "acwi" in cl:
-            rename_map[c] = "ACWI"
-        elif cl in ("^gspc", "gspc", "spx", "sp500", "s&p500", "s&p 500"):
-            rename_map[c] = "SPX"
-        elif cl in ("rsp", "spxetwr", "spx etwr", "sp500 ew", "sp500_eq", "s&p500_eq"):
-            rename_map[c] = "SPXETWR"
+    # Rename human-readable FMP names to short labels used in the legend
+    rename_map = {
+        "MSCI ACWI": "ACWI",
+        "S&P 500": "SPX",
+        "S&P 500 EW": "SPXETWR",
+    }
+    benchmark_returns = benchmark_returns.rename(columns=rename_map)
 
-    if rename_map:
-        benchmark_returns = benchmark_returns.rename(columns=rename_map)
+    # (They are already daily simple returns in decimal form; no rescaling needed)
 
-    # Convert to decimal returns if needed (heuristic: if max abs > 1, assume percent)
-    numeric = benchmark_returns.select_dtypes(include=[np.number])
-    if not numeric.empty:
-        max_abs = numeric.abs().max().max()
-        if pd.notna(max_abs) and max_abs > 1.0:
-            benchmark_returns[numeric.columns] = numeric / 100.0
+    logging.info(f"Loaded benchmark returns with columns: {list(benchmark_returns.columns)}")
 
 except Exception as e:
     logging.warning(f"Could not load benchmark returns: {e}")
