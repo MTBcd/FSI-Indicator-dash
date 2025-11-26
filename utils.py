@@ -869,7 +869,7 @@ def orient_fsi_and_omega(
 
 def classify_regime_global_fsi(
     fsi_series: pd.Series,
-    quantiles=(0.37, 0.77, 0.95) #(0.40, 0.80, 0.96)
+    quantiles=(0.38, 0.77, 0.95) #(0.40, 0.80, 0.96)
 ) -> pd.Series:
     """
     Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
@@ -929,9 +929,9 @@ def classify_regime_global_fsi(
 
 def fsi_vol_spike_flags(
     fsi_series: pd.Series,
-    lambda_=0.96,            # was 0.97 -> reacts a bit faster
+    lambda_=0.95,            # was 0.97 -> reacts a bit faster
     change_quantile=0.90,    # was 0.95 -> easier to flag a jump
-    level_quantile=0.55,     # was 0.60 -> slightly lower vol level needed
+    level_quantile=0.50,     # was 0.60 -> slightly lower vol level needed
     min_history: int = 60,
     dilate_window: int = 1,  # new: widen spikes by ±1 day
 ) -> pd.Series:
@@ -986,10 +986,10 @@ def _upgrade_one_notch(regime_series: pd.Series, spike_flags: pd.Series,
 
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
-    quantiles=(0.37, 0.77, 0.95), # (0.40, 0.80, 0.96)
-    lambda_=0.96,
+    quantiles=(0.38, 0.77, 0.95), # (0.40, 0.80, 0.96)
+    lambda_=0.95,
     change_quantile=0.90,
-    level_quantile=0.55,
+    level_quantile=0.50,
     min_history_spike: int = 60,
     min_run_length: int = 3,
 ) -> pd.Series:

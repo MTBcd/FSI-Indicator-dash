@@ -233,6 +233,12 @@ def build_pnl_stats_table(pnl_series: pd.Series):
 
     return table
 
+# --- Shared chart container style (FSI, PnL, CumRet) ---
+MAIN_GRAPH_STYLE = {
+    "height": "430px",      # same pixel height for all
+    "width": "100%",        # stretch within its column
+    "marginBottom": "10px", # consistent spacing below
+}
 
 # --- App Layout ---
 app.layout = html.Div([
@@ -296,7 +302,7 @@ app.layout = html.Div([
                         inline=True,
                         style={'marginBottom': '12px'}
                     ),
-                    dcc.Graph(id='fig1'),
+                    dcc.Graph(id='fig1', style=MAIN_GRAPH_STYLE),
                     html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
                 ], style={"margin-bottom": "10px"}),
 
@@ -306,7 +312,7 @@ app.layout = html.Div([
                         "Group-Level FSI",
                         info_icon("Aggregated by risk group: Volatility, Rates, Credit, etc.")
                     ]),
-                    dcc.Graph(id='fig2'),
+                    dcc.Graph(id='fig2', style=MAIN_GRAPH_STYLE),
                     html.Button("Download as Image", id="dl-fig2", n_clicks=0, className="download-btn")
                 ]),
 
@@ -329,7 +335,7 @@ app.layout = html.Div([
                         page_size=15
                     )
                 ], style={"marginBottom": "30px"}),
-            ], style={'width': '95%', 'margin': 'auto'})
+            ], style={'width': '90%', 'margin': 'auto'})
         ]
     ),
 
@@ -387,7 +393,7 @@ app.layout = html.Div([
                     color="#396aff",
                     children=dcc.Graph(
                         id='fig-pnl',
-                        style={"margin-bottom": "8px"}
+                        style=MAIN_GRAPH_STYLE
                     )
                 ),
 
@@ -432,7 +438,7 @@ app.layout = html.Div([
                 # Preview always below everything
                 html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
 
-            ], style={'width': '95%', 'margin': 'auto', 'margin-bottom': '30px'}),
+            ], style={'width': '90%', 'margin': 'auto', 'margin-bottom': '30px'}),
 
             # ========= NEW: Cumulative Returns vs Benchmarks =========
             html.H3([
@@ -453,7 +459,7 @@ app.layout = html.Div([
 
             dcc.Graph(
                 id='fig-cumret',
-                style={"margin-bottom": "20px"}
+                style=MAIN_GRAPH_STYLE
             ),
 
     html.Hr(),
