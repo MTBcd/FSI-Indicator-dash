@@ -235,9 +235,14 @@ def build_pnl_stats_table(pnl_series: pd.Series):
 
 # --- Shared chart container style (FSI, PnL, CumRet) ---
 MAIN_GRAPH_STYLE = {
-    "height": "430px",      # same pixel height for all
+    "height": "400px",      # same pixel height for all
     "width": "100%",        # stretch within its column
     "marginBottom": "10px", # consistent spacing below
+}
+
+CONTENT_STYLE = {
+    "width": "98%",      # was 90–95%; increase to reduce grey side margins
+    "margin": "0 auto",  # center the block
 }
 
 # --- App Layout ---
@@ -335,7 +340,7 @@ app.layout = html.Div([
                         page_size=15
                     )
                 ], style={"marginBottom": "30px"}),
-            ], style={'width': '90%', 'margin': 'auto'})
+            ], style=CONTENT_STYLE)
         ]
     ),
 
@@ -438,29 +443,31 @@ app.layout = html.Div([
                 # Preview always below everything
                 html.Div(id="pnl-preview", style={"margin": "7px 0 7px 0", "font-size": "0.95em"}),
 
-            ], style={'width': '90%', 'margin': 'auto', 'margin-bottom': '30px'}),
+            ], style={**CONTENT_STYLE, 'margin-bottom': '30px'}),
 
             # ========= NEW: Cumulative Returns vs Benchmarks =========
-            html.H3([
-                "Cumulative Returns vs Benchmarks",
-                info_icon("Cumulative performance of NEPTUNE vs S&P 500, S&P 500 equal-weighted, and MSCI ACWI.")
-            ], style={"marginTop": "18px"}),
+            html.Div([
+                html.H3([
+                    "Cumulative Returns vs Benchmarks",
+                    info_icon("Cumulative performance of NEPTUNE vs S&P 500, S&P 500 equal-weighted, and MSCI ACWI.")
+                ], style={"marginTop": "18px"}),
 
-            html.Label("Select date range (cumulative returns):"),
-            dcc.DatePickerRange(
-                id='cumret-date-range',
-                min_date_allowed=None,
-                max_date_allowed=None,
-                start_date=None,
-                end_date=None,
-                display_format="YYYY-MM-DD",
-                style={"marginBottom": "10px"}
-            ),
+                html.Label("Select date range (cumulative returns):"),
+                dcc.DatePickerRange(
+                    id='cumret-date-range',
+                    min_date_allowed=None,
+                    max_date_allowed=None,
+                    start_date=None,
+                    end_date=None,
+                    display_format="YYYY-MM-DD",
+                    style={"marginBottom": "10px"}
+                ),
 
-            dcc.Graph(
-                id='fig-cumret',
-                style=MAIN_GRAPH_STYLE
-            ),
+                dcc.Graph(
+                    id='fig-cumret',
+                    style=MAIN_GRAPH_STYLE
+                ),
+            ], style=CONTENT_STYLE),
 
     html.Hr(),
 
