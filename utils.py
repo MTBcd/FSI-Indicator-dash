@@ -963,71 +963,124 @@ def fsi_vol_spike_flags(
     return raw_flags
 
 
+# REGIME_ORDER = ["Green", "Yellow", "Amber", "Red"]
+# REGIME_TO_INT = {r: i for i, r in enumerate(REGIME_ORDER)}
+# INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
+
+
+# def _upgrade_one_notch(regime_series: pd.Series, spike_flags: pd.Series,
+#                        fsi_series: pd.Series, q1: float) -> pd.Series:
+#     """
+#     Upgrade regime by one notch on spike days, but only when FSI > q1
+#     (i.e., don't create Yellow in very low FSI environment).
+#     """
+#     out = regime_series.copy()
+#     base_int = regime_series.map(REGIME_TO_INT)
+
+#     mask = spike_flags & (fsi_series > q1)
+#     base_int_spike = base_int.where(~mask, np.minimum(base_int + 1, len(REGIME_ORDER) - 1))
+
+#     return base_int_spike.map(INT_TO_REGIME)
+
+
 REGIME_ORDER = ["Green", "Yellow", "Amber", "Red"]
 REGIME_TO_INT = {r: i for i, r in enumerate(REGIME_ORDER)}
 INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
 
 
-def _upgrade_one_notch(regime_series: pd.Series, spike_flags: pd.Series,
-                       fsi_series: pd.Series, q1: float) -> pd.Series:
-    """
-    Upgrade regime by one notch on spike days, but only when FSI > q1
-    (i.e., don't create Yellow in very low FSI environment).
-    """
-    out = regime_series.copy()
-    base_int = regime_series.map(REGIME_TO_INT)
-
-    mask = spike_flags & (fsi_series > q1)
-    base_int_spike = base_int.where(~mask, np.minimum(base_int + 1, len(REGIME_ORDER) - 1))
-
-    return base_int_spike.map(INT_TO_REGIME)
-
-
-
-def classify_regime_fsi_improved(
+def _upgrade_with_direction(
+    regime_series: pd.Series,
+    spike_flags: pd.Series,
     fsi_series: pd.Series,
-    quantiles=(0.38, 0.77, 0.95), # (0.40, 0.80, 0.96)
-    lambda_=0.95,
-    change_quantile=0.90,
-    level_quantile=0.50,
-    min_history_spike: int = 60,
-    min_run_length: int = 3,
+    q1: float,
+    q2: float,
+    super_spike_quantile: float = 0.97,
 ) -> pd.Series:
     """
-    Canonical FSI-only 4-color regime classifier.
+    Directional upgrade logic:
 
-    Steps:
-      1) Base regime from *global* FSI quantiles.
-      2) Detect FSI-only volatility spikes (EWMA vol level + change).
-      3) On spike days with FSI > q1, upgrade regime by ONE notch (Green→Yellow→Amber→Red).
-      4) Smooth regimes: any run shorter than min_run_length days is merged into the previous regime.
+    - Only *upward* FSI spikes can upgrade.
+    - Normal upward spikes (FSI > q1) → +1 notch.
+    - Very large upward spikes with already-elevated FSI (FSI > q2
+      and dFSI above super_spike_quantile) → force Red.
     """
-    fsi = fsi_series.copy()
+    base_int = regime_series.map(REGIME_TO_INT)
+    out_int = base_int.copy()
 
-    # 1. Base global regime & thresholds
-    fsi_nonnull = fsi.dropna()
-    if fsi_nonnull.empty:
-        return pd.Series(index=fsi.index, dtype="object")
-    q1, q2, q3 = fsi_nonnull.quantile(quantiles)
+    # daily FSI change (level, not %; you can swap to pct_change if preferred)
+    dfsi = fsi_series.diff().reindex(regime_series.index)
 
-    base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
+    # only upward moves are candidates
+    up_moves = dfsi > 0
 
-    # 2. Spike flags FSI-only
-    spikes = fsi_vol_spike_flags(
-        fsi,
-        lambda_=lambda_,
-        change_quantile=change_quantile,
-        level_quantile=level_quantile,
-        min_history=min_history_spike,
-    )
+    # basic upward spike mask: vol spike & move up & FSI above lower threshold
+    up_spike_mask = spike_flags & up_moves & (fsi_series > q1)
 
-    # 3. Upgrade by one notch where spike & FSI > q1
-    upgraded_regime = _upgrade_one_notch(base_regime, spikes, fsi, q1=q1)
+    # super-spikes: among upward moves, very large change and already high FSI
+    pos_changes = dfsi[dfsi > 0].dropna()
+    if not pos_changes.empty:
+        super_thr = pos_changes.quantile(super_spike_quantile)
+        super_mask = up_spike_mask & (dfsi > super_thr) & (fsi_series > q2)
+    else:
+        super_mask = pd.Series(False, index=regime_series.index)
 
-    # 4. Smooth/hysteresis
-    smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
+    # 1) normal upward spikes → +1 notch (but not where super_mask is True)
+    normal_mask = up_spike_mask & ~super_mask
+    out_int[normal_mask] = np.minimum(out_int[normal_mask] + 1,
+                                      len(REGIME_ORDER) - 1)
 
-    return smoothed_regime
+    # 2) super-spikes → force Red
+    out_int[super_mask] = REGIME_TO_INT["Red"]
+
+    return out_int.map(INT_TO_REGIME)
+
+
+
+
+# def classify_regime_fsi_improved(
+#     fsi_series: pd.Series,
+#     quantiles=(0.38, 0.77, 0.95), # (0.40, 0.80, 0.96)
+#     lambda_=0.95,
+#     change_quantile=0.90,
+#     level_quantile=0.50,
+#     min_history_spike: int = 60,
+#     min_run_length: int = 3,
+# ) -> pd.Series:
+#     """
+#     Canonical FSI-only 4-color regime classifier.
+
+#     Steps:
+#       1) Base regime from *global* FSI quantiles.
+#       2) Detect FSI-only volatility spikes (EWMA vol level + change).
+#       3) On spike days with FSI > q1, upgrade regime by ONE notch (Green→Yellow→Amber→Red).
+#       4) Smooth regimes: any run shorter than min_run_length days is merged into the previous regime.
+#     """
+#     fsi = fsi_series.copy()
+
+#     # 1. Base global regime & thresholds
+#     fsi_nonnull = fsi.dropna()
+#     if fsi_nonnull.empty:
+#         return pd.Series(index=fsi.index, dtype="object")
+#     q1, q2, q3 = fsi_nonnull.quantile(quantiles)
+
+#     base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
+
+#     # 2. Spike flags FSI-only
+#     spikes = fsi_vol_spike_flags(
+#         fsi,
+#         lambda_=lambda_,
+#         change_quantile=change_quantile,
+#         level_quantile=level_quantile,
+#         min_history=min_history_spike,
+#     )
+
+#     # 3. Upgrade by one notch where spike & FSI > q1
+#     upgraded_regime = _upgrade_one_notch(base_regime, spikes, fsi, q1=q1)
+
+#     # 4. Smooth/hysteresis
+#     smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
+
+#     return smoothed_regime
 
 
 
@@ -1056,6 +1109,58 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
     return out
 
 
+def classify_regime_fsi_improved(
+    fsi_series: pd.Series,
+    quantiles=(0.38, 0.77, 0.95),
+    lambda_=0.95,
+    change_quantile=0.90,
+    level_quantile=0.50,
+    min_history_spike: int = 60,
+    min_run_length: int = 2,      # <- allow 2-day Red bursts to survive
+    super_spike_quantile: float = 0.97,
+) -> pd.Series:
+    """
+    Canonical FSI-only 4-color regime classifier (directional):
+
+      1) Base regime from *global* FSI quantiles.
+      2) Detect FSI-only volatility spikes.
+      3) Consider only UPWARD spikes:
+         - normal up-spike → +1 notch if FSI > q1
+         - very large up-spike with FSI > q2 → force Red
+      4) Smooth: runs shorter than min_run_length are merged into previous regime.
+    """
+    fsi = fsi_series.copy()
+    fsi_nonnull = fsi.dropna()
+    if fsi_nonnull.empty:
+        return pd.Series(index=fsi.index, dtype="object")
+
+    q1, q2, q3 = fsi_nonnull.quantile(quantiles)
+
+    # 1. Base regime by level
+    base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
+
+    # 2. Volatility spikes (symmetric, no direction)
+    spikes = fsi_vol_spike_flags(
+        fsi,
+        lambda_=lambda_,
+        change_quantile=change_quantile,
+        level_quantile=level_quantile,
+        min_history=min_history_spike,
+    )
+
+    # 3. Directional, tiered upgrades
+    upgraded_regime = _upgrade_with_direction(
+        base_regime,
+        spike_flags=spikes,
+        fsi_series=fsi,
+        q1=q1,
+        q2=q2,
+        super_spike_quantile=super_spike_quantile,
+    )
+
+    # 4. Smoothing / hysteresis
+    smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
+    return smoothed_regime
 
 
 
