@@ -869,7 +869,7 @@ def orient_fsi_and_omega(
 
 def classify_regime_global_fsi(
     fsi_series: pd.Series,
-    quantiles=(0.40, 0.80, 0.96)
+    quantiles=(0.37, 0.77, 0.95) #(0.40, 0.80, 0.96)
 ) -> pd.Series:
     """
     Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
@@ -898,26 +898,49 @@ def classify_regime_global_fsi(
     return regimes
 
 
+# def fsi_vol_spike_flags(
+#     fsi_series: pd.Series,
+#     lambda_=0.97,
+#     change_quantile=0.95,
+#     level_quantile=0.60,
+#     min_history: int = 60
+# ) -> pd.Series:
+#     """
+#     FSI-only volatility spike detector:
+#     - Compute EWMA volatility of FSI.
+#     - Flag spike when:
+#         * change in vol > change_quantile of its own history, AND
+#         * vol level > level_quantile of its own distribution.
+#     """
+#     vol = ewma_volatility(fsi_series, lambda_=lambda_)  # already FSI-only
+#     dvol = vol.diff()
+
+#     # Restrict to build thresholds only where we have enough history
+#     valid = dvol.dropna()
+#     if len(valid) < min_history:
+#         return pd.Series(False, index=fsi_series.index)
+
+#     change_thr = valid.quantile(change_quantile)
+#     level_thr  = vol.dropna().quantile(level_quantile)
+
+#     flags = (dvol > change_thr) & (vol > level_thr)
+#     return flags.reindex(fsi_series.index).fillna(False)
 
 
 def fsi_vol_spike_flags(
     fsi_series: pd.Series,
-    lambda_=0.97,
-    change_quantile=0.95,
-    level_quantile=0.60,
-    min_history: int = 60
+    lambda_=0.96,            # was 0.97 -> reacts a bit faster
+    change_quantile=0.90,    # was 0.95 -> easier to flag a jump
+    level_quantile=0.55,     # was 0.60 -> slightly lower vol level needed
+    min_history: int = 60,
+    dilate_window: int = 1,  # new: widen spikes by ±1 day
 ) -> pd.Series:
     """
-    FSI-only volatility spike detector:
-    - Compute EWMA volatility of FSI.
-    - Flag spike when:
-        * change in vol > change_quantile of its own history, AND
-        * vol level > level_quantile of its own distribution.
+    FSI-only volatility spike detector (slightly more sensitive).
     """
-    vol = ewma_volatility(fsi_series, lambda_=lambda_)  # already FSI-only
+    vol = ewma_volatility(fsi_series, lambda_=lambda_)
     dvol = vol.diff()
 
-    # Restrict to build thresholds only where we have enough history
     valid = dvol.dropna()
     if len(valid) < min_history:
         return pd.Series(False, index=fsi_series.index)
@@ -925,11 +948,19 @@ def fsi_vol_spike_flags(
     change_thr = valid.quantile(change_quantile)
     level_thr  = vol.dropna().quantile(level_quantile)
 
-    flags = (dvol > change_thr) & (vol > level_thr)
-    return flags.reindex(fsi_series.index).fillna(False)
+    raw_flags = (dvol > change_thr) & (vol > level_thr)
+    raw_flags = raw_flags.reindex(fsi_series.index).fillna(False)
 
+    # Simple morphological dilation: expand spikes by ± dilate_window days
+    if dilate_window > 0:
+        expanded = (
+            raw_flags.rolling(2 * dilate_window + 1, center=True, min_periods=1)
+                     .max()
+                     .astype(bool)
+        )
+        return expanded
 
-
+    return raw_flags
 
 
 REGIME_ORDER = ["Green", "Yellow", "Amber", "Red"]
@@ -955,10 +986,10 @@ def _upgrade_one_notch(regime_series: pd.Series, spike_flags: pd.Series,
 
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
-    quantiles=(0.40, 0.80, 0.96),
-    lambda_=0.97,
-    change_quantile=0.95,
-    level_quantile=0.60,
+    quantiles=(0.37, 0.77, 0.95), # (0.40, 0.80, 0.96)
+    lambda_=0.96,
+    change_quantile=0.90,
+    level_quantile=0.55,
     min_history_spike: int = 60,
     min_run_length: int = 3,
 ) -> pd.Series:
