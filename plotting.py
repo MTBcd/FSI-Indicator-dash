@@ -596,7 +596,7 @@ def plot_distribution_plotly(pnl_values, period_title, pnl_range=None):
     fig.update_layout(
         xaxis_title="PnL Values",
         yaxis_title="Density",
-        margin=dict(l=50, r=110, t=35, b=40),
+        margin=dict(l=40, r=100, t=35, b=40),
         legend=dict(
             orientation="h",
             yanchor="bottom", y=-0.3,
@@ -709,14 +709,13 @@ def make_cumret_figure(
         yaxis_title="Cumulative Return (%)",
         hovermode="x unified",
         legend=dict(
-            orientation="v",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1.0,
+            orientation="v",   # vertical legend
+            yanchor="top",
+            y=1.0,             # top
+            xanchor="left",
+            x=1.02,            # just to the right of the plot area
         ),
-        
-        margin=dict(l=40, r=160, t=60, b=40),
+        margin=dict(l=40, r=100, t=35, b=40),
     )
     fig.update_xaxes(showgrid=False, zeroline=False)
     fig.update_yaxes(showgrid=False, zeroline=False)

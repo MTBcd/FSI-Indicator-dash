@@ -235,7 +235,7 @@ def build_pnl_stats_table(pnl_series: pd.Series):
 
 # --- Shared chart container style (FSI, PnL, CumRet) ---
 MAIN_GRAPH_STYLE = {
-    "height": "400px",      # same pixel height for all
+    "height": "500px",      # same pixel height for all
     "width": "100%",        # stretch within its column
     "marginBottom": "25px", # consistent spacing below
 }
