@@ -190,7 +190,6 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
         fig.update_layout(
-            height=650,
             template="plotly_white",
             showlegend=True,
             font=dict(family="Arial", size=13),
@@ -284,7 +283,6 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
         fig.update_layout(
-            height=650,
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
@@ -341,12 +339,11 @@ def plot_hhi_bar(ranking_shares: pd.Series, top_n: int = 15, title_suffix: str =
         hovertemplate="%{x}<br>%{y:.2f}%<extra></extra>"
     ))
     fig.update_layout(
-        height=420,
         template="plotly_white",
         title=f"Top {min(top_n, len(s))} Contributors by Share {title_suffix}",
         xaxis=dict(title="", tickangle=-30),
         yaxis=dict(title="Share (%)", rangemode="tozero"),
-        margin=dict(l=40, r=20, t=50, b=100),
+        margin=dict(l=50, r=110, t=35, b=40), # (l=40, r=20, t=50, b=100)
         showlegend=False
     )
     return fig
@@ -476,7 +473,6 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         )
 
         fig.update_layout(
-            height=600,
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
@@ -611,7 +607,6 @@ def plot_distribution_plotly(pnl_values, period_title, pnl_range=None):
         paper_bgcolor='white',
         xaxis=dict(tickfont=dict(family="Arial", color='#002060', size=12)),
         yaxis=dict(tickfont=dict(family="Arial", color='#3096B9', size=12)),
-        height=340
     )
 
     return fig
@@ -714,14 +709,14 @@ def make_cumret_figure(
         yaxis_title="Cumulative Return (%)",
         hovermode="x unified",
         legend=dict(
-            orientation="h",
+            orientation="v",
             yanchor="bottom",
             y=1.02,
             xanchor="right",
             x=1.0,
         ),
         
-        margin=dict(l=40, r=10, t=60, b=40),
+        margin=dict(l=40, r=160, t=60, b=40),
     )
     fig.update_xaxes(showgrid=False, zeroline=False)
     fig.update_yaxes(showgrid=False, zeroline=False)

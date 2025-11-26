@@ -237,11 +237,11 @@ def build_pnl_stats_table(pnl_series: pd.Series):
 MAIN_GRAPH_STYLE = {
     "height": "400px",      # same pixel height for all
     "width": "100%",        # stretch within its column
-    "marginBottom": "10px", # consistent spacing below
+    "marginBottom": "25px", # consistent spacing below
 }
 
 CONTENT_STYLE = {
-    "width": "98%",      # was 90–95%; increase to reduce grey side margins
+    "width": "99%",      # was 90–95%; increase to reduce grey side margins
     "margin": "0 auto",  # center the block
 }
 
@@ -309,7 +309,7 @@ app.layout = html.Div([
                     ),
                     dcc.Graph(id='fig1', style=MAIN_GRAPH_STYLE),
                     html.Button("Download as Image", id="dl-fig1", n_clicks=0, className="download-btn")
-                ], style={"margin-bottom": "10px"}),
+                ], style={"marginBottom": "40px"}),
 
                 # Group-Level FSI
                 html.Div([
@@ -467,7 +467,7 @@ app.layout = html.Div([
                     id='fig-cumret',
                     style=MAIN_GRAPH_STYLE
                 ),
-            ], style=CONTENT_STYLE),
+            ], style={**CONTENT_STYLE, "marginTop": "35px", "marginBottom": "20px"}),
 
     html.Hr(),
 
