@@ -1159,6 +1159,50 @@ def _upgrade_with_direction(
 
 
 
+def _apply_cooling_amber_to_yellow(
+    regime_series: pd.Series,
+    fsi_series: pd.Series,
+    spike_flags: pd.Series,
+    cool_run: int = 5,          # how many consecutive down days required
+    cool_quantile: float = 0.70 # how low FSI must have fallen (relative to history)
+) -> pd.Series:
+    """
+    Cooling logic on the way down:
+
+    - Only demotes Amber → Yellow (never below Yellow).
+    - Needs a run of `cool_run` consecutive negative dFSI.
+    - Requires FSI to be below the `cool_quantile` of its own history
+      (i.e. well off the extremes).
+    - No active spike flag on that day.
+    """
+    reg_int = regime_series.map(REGIME_TO_INT).copy()
+    dfsi = fsi_series.diff().reindex(regime_series.index)
+
+    # consecutive negative moves
+    neg = dfsi < 0
+    # group by stretches of neg==True
+    neg_run = neg.groupby((~neg).cumsum()).cumsum()
+
+    # FSI level threshold for "cooled off"
+    q_cool = fsi_series.quantile(cool_quantile)
+
+    amber_now = reg_int == REGIME_TO_INT["Amber"]
+
+    cool_mask = (
+        amber_now &
+        (neg_run >= cool_run) &     # sustained decline
+        (~spike_flags) &           # not during a new spike
+        (fsi_series < q_cool)      # FSI has fallen enough
+    )
+
+    reg_int[cool_mask] = REGIME_TO_INT["Yellow"]
+    return reg_int.map(INT_TO_REGIME)
+
+
+
+
+
+
 # def classify_regime_fsi_improved(
 #     fsi_series: pd.Series,
 #     quantiles=(0.38, 0.77, 0.95), # (0.40, 0.80, 0.96)
@@ -1285,6 +1329,58 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
 #     return smoothed_regime
 
 
+
+
+
+# def classify_regime_fsi_improved(
+#     fsi_series: pd.Series,
+#     quantiles=(0.38, 0.75, 0.95),
+#     lambda_=0.90,
+#     change_quantile=0.90,
+#     level_quantile=0.50,
+#     min_history_spike: int = 60,
+#     min_run_length: int = 2,          # allow 2-day Red bursts
+#     super_spike_quantile: float = 0.90,
+# ) -> pd.Series:
+#     fsi = fsi_series.copy()
+#     fsi_nonnull = fsi.dropna()
+#     if fsi_nonnull.empty:
+#         return pd.Series(index=fsi.index, dtype="object")
+
+#     q1, q2, q3 = fsi_nonnull.quantile(quantiles)
+
+#     # 1. Base regime by global quantiles
+#     base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
+
+#     # 2. Symmetric volatility spikes (EWMA)
+#     spikes = fsi_vol_spike_flags(
+#         fsi,
+#         lambda_=lambda_,
+#         change_quantile=change_quantile,
+#         level_quantile=level_quantile,
+#         min_history=min_history_spike,
+#     )
+
+#     # 3. Directional, tiered upgrades
+#     upgraded_regime = _upgrade_with_direction(
+#         base_regime,
+#         spike_flags=spikes,
+#         fsi_series=fsi,
+#         q1=q1,
+#         q2=q2,
+#         super_spike_quantile=super_spike_quantile,
+#     )
+
+#     # 4. Smoothing / hysteresis
+#     smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
+#     return smoothed_regime
+
+
+
+
+
+
+
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
     quantiles=(0.38, 0.75, 0.95),
@@ -1292,7 +1388,7 @@ def classify_regime_fsi_improved(
     change_quantile=0.90,
     level_quantile=0.50,
     min_history_spike: int = 60,
-    min_run_length: int = 2,          # allow 2-day Red bursts
+    min_run_length: int = 2,
     super_spike_quantile: float = 0.90,
 ) -> pd.Series:
     fsi = fsi_series.copy()
@@ -1314,7 +1410,7 @@ def classify_regime_fsi_improved(
         min_history=min_history_spike,
     )
 
-    # 3. Directional, tiered upgrades
+    # 3. Directional, tiered upgrades (only up)
     upgraded_regime = _upgrade_with_direction(
         base_regime,
         spike_flags=spikes,
@@ -1324,6 +1420,20 @@ def classify_regime_fsi_improved(
         super_spike_quantile=super_spike_quantile,
     )
 
+    # 3b. Cooling on the way down: Amber → Yellow after sustained decline
+    cooled_regime = _apply_cooling_amber_to_yellow(
+        upgraded_regime,
+        fsi_series=fsi,
+        spike_flags=spikes,
+        cool_run=5,         # try 4–6 and see what looks best
+        cool_quantile=0.70  # 0.65–0.75 is a good range to play with
+    )
+
     # 4. Smoothing / hysteresis
-    smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
+    smoothed_regime = smooth_regime_series(cooled_regime, min_run=min_run_length)
     return smoothed_regime
+
+
+
+
+
