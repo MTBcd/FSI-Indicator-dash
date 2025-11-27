@@ -1561,7 +1561,7 @@ def classify_regime_fsi_improved(
         lambda_=lambda_,
         change_quantile=change_quantile,
         level_quantile=level_quantile,
-        min_history_spike=min_history_spike,
+        min_history=min_history_spike,   # <-- fixed name
     )
 
     # 3. Directional, tiered upgrades (only up)
