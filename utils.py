@@ -1309,6 +1309,61 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
     return out
 
 
+def _cool_from_local_peak(
+    regime_series: pd.Series,
+    fsi_series: pd.Series,
+    lookback: int = 252,         # how far back we look for a local peak
+    drop_amber: float = 0.25,    # 25% drop from peak → Amber→Yellow
+    drop_red: float = 0.20,      # 20% drop from peak → Red→Amber
+    min_down_days: int = 3       # need at least this many down days
+) -> pd.Series:
+    """
+    Path-dependent cooling:
+
+    - Compute a rolling peak of FSI over `lookback` days.
+    - When FSI has dropped a lot from that peak and is trending down,
+      step regimes down by 1 notch:
+         Red → Amber, Amber → Yellow.
+    - Green/Yellow are never pushed lower than Yellow.
+    """
+    reg_int = regime_series.map(REGIME_TO_INT).copy()
+
+    fsi = fsi_series.reindex(regime_series.index)
+    # rolling/local peak
+    peak = fsi.rolling(lookback, min_periods=1).max()
+    drawdown = (peak - fsi) / peak.replace(0, np.nan)  # fraction below peak
+
+    # downtrend: count consecutive negative dFSI
+    dfsi = fsi.diff()
+    neg = dfsi < 0
+    neg_run = neg.groupby((~neg).cumsum()).cumsum()
+
+    # where we allow cooling (in a decent downtrend)
+    cooling_zone = neg_run >= min_down_days
+
+    # Red → Amber when far enough below peak
+    red_mask = (
+        (reg_int == REGIME_TO_INT["Red"]) &
+        cooling_zone &
+        (drawdown >= drop_red)
+    )
+    reg_int[red_mask] = REGIME_TO_INT["Amber"]
+
+    # Amber → Yellow when even further below peak
+    amber_mask = (
+        (reg_int == REGIME_TO_INT["Amber"]) &
+        cooling_zone &
+        (drawdown >= drop_amber)
+    )
+    reg_int[amber_mask] = REGIME_TO_INT["Yellow"]
+
+    return reg_int.map(INT_TO_REGIME)
+
+
+
+
+
+
 # def classify_regime_fsi_improved(
 #     fsi_series: pd.Series,
 #     quantiles=(0.38, 0.77, 0.95),
@@ -1418,7 +1473,7 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
 
 
 
-
+##########################################
 
 # def classify_regime_fsi_improved(
 #     fsi_series: pd.Series,
@@ -1472,9 +1527,7 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
 #     smoothed_regime = smooth_regime_series(cooled_regime, min_run=min_run_length)
 #     return smoothed_regime
 
-
-
-
+##########################
 
 
 
@@ -1508,7 +1561,7 @@ def classify_regime_fsi_improved(
         lambda_=lambda_,
         change_quantile=change_quantile,
         level_quantile=level_quantile,
-        min_history=min_history_spike,
+        min_history_spike=min_history_spike,
     )
 
     # 3. Directional, tiered upgrades (only up)
@@ -1522,13 +1575,25 @@ def classify_regime_fsi_improved(
     )
 
     # 3b. Relax back toward base when FSI is trending down
-    cooled_regime = _revert_toward_base_on_decline(
+    relaxed_regime = _revert_toward_base_on_decline(
         upgraded_regime,
         base_regime=base_regime,
         fsi_series=fsi,
-        run_down=3   # try 3; adjust to 2 or 4 if needed
+        run_down=3
+    )
+
+    # 3c. Extra cooling from local peak (Red→Amber, Amber→Yellow)
+    cooled_regime = _cool_from_local_peak(
+        relaxed_regime,
+        fsi_series=fsi,
+        lookback=252,
+        drop_amber=0.25,
+        drop_red=0.20,
+        min_down_days=3
     )
 
     # 4. Smoothing / hysteresis (to kill 1-day flips)
     smoothed_regime = smooth_regime_series(cooled_regime, min_run=min_run_length)
     return smoothed_regime
+
+
