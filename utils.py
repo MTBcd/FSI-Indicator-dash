@@ -1034,57 +1034,129 @@ INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
 
 #     return out_int.map(INT_TO_REGIME)
 
+
+
+
+
+
+
+# def _upgrade_with_direction(
+#     regime_series: pd.Series,
+#     spike_flags: pd.Series,
+#     fsi_series: pd.Series,
+#     q1: float,
+#     q2: float,
+#     super_spike_quantile: float = 0.90,   # was 0.97 → easier to qualify
+# ) -> pd.Series:
+#     """
+#     Directional upgrade logic:
+
+#     - Only *upward* FSI moves can upgrade.
+#     - Normal upward spikes (FSI > q1) → +1 notch.
+#     - Very large upward spikes (dFSI in top X% and FSI > q1) → force Red,
+#       even if the base regime is only Yellow.
+#     """
+#     base_int = regime_series.map(REGIME_TO_INT)
+#     out_int = base_int.copy()
+
+#     # daily FSI change (level)
+#     dfsi = fsi_series.diff().reindex(regime_series.index)
+
+#     # only upward moves are candidates
+#     up_moves = dfsi > 0
+
+#     # vol spike & move up & FSI above lower threshold
+#     up_spike_mask = spike_flags & up_moves & (fsi_series > q1)
+
+#     # super-spikes: very large *upward* changes
+#     pos_changes = dfsi[dfsi > 0].dropna()
+#     if not pos_changes.empty:
+#         super_thr  = pos_changes.quantile(super_spike_quantile)   # e.g. 0.93
+#         medium_thr = pos_changes.quantile(0.85)                   # new
+#         super_mask = up_spike_mask & (dfsi > super_thr)
+#         # “medium” spikes: between 85th and super_spike_quantile
+#         medium_mask = up_spike_mask & (dfsi > medium_thr) & ~super_mask
+#     else:
+#         super_mask = pd.Series(False, index=regime_series.index)
+#         medium_mask = super_mask.copy()
+
+#     normal_mask = up_spike_mask & ~super_mask & ~medium_mask
+#     max_int = len(REGIME_ORDER) - 1
+
+#     # +2 for medium spikes
+#     out_int[medium_mask] = np.minimum(base_int[medium_mask] + 2, max_int)
+#     # +1 for normal spikes
+#     out_int[normal_mask] = np.minimum(base_int[normal_mask] + 1, max_int)
+#     # super spikes → Red
+#     out_int[super_mask] = REGIME_TO_INT["Red"]
+
+#     return out_int.map(INT_TO_REGIME)
+
+
+
+
+
+
 def _upgrade_with_direction(
     regime_series: pd.Series,
     spike_flags: pd.Series,
     fsi_series: pd.Series,
     q1: float,
     q2: float,
-    super_spike_quantile: float = 0.90,   # was 0.97 → easier to qualify
+    super_spike_quantile: float = 0.90,
+    medium_quantile: float = 0.85,
 ) -> pd.Series:
-    """
-    Directional upgrade logic:
-
-    - Only *upward* FSI moves can upgrade.
-    - Normal upward spikes (FSI > q1) → +1 notch.
-    - Very large upward spikes (dFSI in top X% and FSI > q1) → force Red,
-      even if the base regime is only Yellow.
-    """
     base_int = regime_series.map(REGIME_TO_INT)
-    out_int = base_int.copy()
+    out_int  = base_int.copy()
 
-    # daily FSI change (level)
     dfsi = fsi_series.diff().reindex(regime_series.index)
 
     # only upward moves are candidates
     up_moves = dfsi > 0
 
-    # vol spike & move up & FSI above lower threshold
-    up_spike_mask = spike_flags & up_moves & (fsi_series > q1)
+    # spike in FSI, regardless of level (for medium / super)
+    raw_spike = spike_flags & up_moves
 
-    # super-spikes: very large *upward* changes
     pos_changes = dfsi[dfsi > 0].dropna()
     if not pos_changes.empty:
-        super_thr  = pos_changes.quantile(super_spike_quantile)   # e.g. 0.93
-        medium_thr = pos_changes.quantile(0.85)                   # new
-        super_mask = up_spike_mask & (dfsi > super_thr)
-        # “medium” spikes: between 85th and super_spike_quantile
-        medium_mask = up_spike_mask & (dfsi > medium_thr) & ~super_mask
+        super_thr  = pos_changes.quantile(super_spike_quantile)
+        medium_thr = pos_changes.quantile(medium_quantile)
+
+        # very large jump → super
+        super_mask  = raw_spike & (dfsi > super_thr)
+        # medium jump → medium
+        medium_mask = raw_spike & (dfsi > medium_thr) & ~super_mask
     else:
-        super_mask = pd.Series(False, index=regime_series.index)
+        super_mask  = pd.Series(False, index=regime_series.index)
         medium_mask = super_mask.copy()
 
-    normal_mask = up_spike_mask & ~super_mask & ~medium_mask
+    # smaller spikes still need FSI above q1 to avoid noise
+    normal_mask = (
+        raw_spike
+        & ~super_mask
+        & ~medium_mask
+        & (fsi_series > q1)
+    )
+
     max_int = len(REGIME_ORDER) - 1
 
-    # +2 for medium spikes
-    out_int[medium_mask] = np.minimum(base_int[medium_mask] + 2, max_int)
-    # +1 for normal spikes
+    # medium spikes: at least Amber (Green→Amber, Yellow→Red)
+    out_int[medium_mask] = np.maximum(
+        REGIME_TO_INT["Amber"],
+        np.minimum(base_int[medium_mask] + 2, max_int)
+    )
+
+    # normal spikes: +1 notch
     out_int[normal_mask] = np.minimum(base_int[normal_mask] + 1, max_int)
-    # super spikes → Red
+
+    # super spikes: outright Red
     out_int[super_mask] = REGIME_TO_INT["Red"]
 
     return out_int.map(INT_TO_REGIME)
+
+
+
+
 
 
 # def classify_regime_fsi_improved(
@@ -1215,13 +1287,13 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
 
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
-    quantiles=(0.38, 0.77, 0.95),
-    lambda_=0.95,
+    quantiles=(0.38, 0.75, 0.95),
+    lambda_=0.90,
     change_quantile=0.90,
     level_quantile=0.50,
     min_history_spike: int = 60,
     min_run_length: int = 2,          # allow 2-day Red bursts
-    super_spike_quantile: float = 0.95,
+    super_spike_quantile: float = 0.90,
 ) -> pd.Series:
     fsi = fsi_series.copy()
     fsi_nonnull = fsi.dropna()
