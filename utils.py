@@ -930,10 +930,10 @@ def classify_regime_global_fsi(
 def fsi_vol_spike_flags(
     fsi_series: pd.Series,
     lambda_=0.90,            # was 0.97 -> reacts a bit faster
-    change_quantile=0.88,    # was 0.95 -> easier to flag a jump
+    change_quantile=0.85,    # was 0.95 -> easier to flag a jump
     level_quantile=0.45,     # was 0.60 -> slightly lower vol level needed
     min_history: int = 60,
-    dilate_window: int = 2,  # new: widen spikes by ±1 day
+    dilate_window: int = 3,  # new: widen spikes by ±1 day
 ) -> pd.Series:
     """
     FSI-only volatility spike detector (slightly more sensitive).
@@ -1040,7 +1040,7 @@ def _upgrade_with_direction(
     fsi_series: pd.Series,
     q1: float,
     q2: float,
-    super_spike_quantile: float = 0.90,   # was 0.97 → easier to qualify
+    super_spike_quantile: float = 0.85,   # was 0.97 → easier to qualify
 ) -> pd.Series:
     """
     Directional upgrade logic:
@@ -1216,12 +1216,12 @@ def smooth_regime_series(regimes: pd.Series, min_run: int = 3) -> pd.Series:
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
     quantiles=(0.38, 0.77, 0.95),
-    lambda_=0.95,
-    change_quantile=0.90,
-    level_quantile=0.50,
+    lambda_=0.90,
+    change_quantile=0.85,
+    level_quantile=0.45,
     min_history_spike: int = 60,
-    min_run_length: int = 2,          # allow 2-day Red bursts
-    super_spike_quantile: float = 0.95,
+    min_run_length: int = 3,          # allow 2-day Red bursts
+    super_spike_quantile: float = 0.85,
 ) -> pd.Series:
     fsi = fsi_series.copy()
     fsi_nonnull = fsi.dropna()
@@ -1255,3 +1255,4 @@ def classify_regime_fsi_improved(
     # 4. Smoothing / hysteresis
     smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
     return smoothed_regime
+
