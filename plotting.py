@@ -34,7 +34,8 @@ def _compute_date_ticks(index: pd.DatetimeIndex):
     """
     Build x-axis tick positions and labels based on the selected time window:
       - > 3 years  -> yearly ticks: 2019, 2020, ...
-      - <= 3 years -> quarterly ticks: Q1 2023, Q2 2023, ...
+      - 1–3 years  -> quarterly ticks: Q1 2023, Q2 2023, ...
+      - < 1 year   -> monthly ticks: Jan 2023, Feb 2023, ...
     """
     idx = pd.to_datetime(index)
     if idx.empty:
@@ -50,13 +51,22 @@ def _compute_date_ticks(index: pd.DatetimeIndex):
         years = range(start.year, end.year + 1)
         tickvals = [pd.Timestamp(f"{y}-01-01") for y in years]
         ticktext = [str(y) for y in years]
-    else:
+
+    elif span_years > 1:
         # Quarterly ticks
         quarters = pd.period_range(start=start, end=end, freq="Q")
         tickvals = [p.start_time for p in quarters]
         ticktext = [f"Q{p.quarter} {p.year}" for p in quarters]
 
+    else:
+        # Monthly ticks
+        months = pd.period_range(start=start, end=end, freq="M")
+        tickvals = [p.start_time for p in months]
+        # e.g. "Jan 2023"
+        ticktext = [p.start_time.strftime("%b %Y") for p in months]
+
     return tickvals, ticktext
+
 
 
 def apply_standard_date_axis(fig: go.Figure, index, title_text: str = "<b>Date</b>"):
