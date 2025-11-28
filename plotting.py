@@ -659,7 +659,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             bgcolor="rgba(255, 255, 255, 0.5)", bordercolor="red", borderwidth=1, borderpad=4,
         )
         fig.add_annotation(
-            x=pd.to_datetime("2023-01-01"), y=-0.2, xref='x', yref='paper',
+            x=pd.to_datetime("2023-01-01"), y=-0.16, xref='x', yref='paper',
             text="<b>New Risk<br>Controls</b>", showarrow=False,
             font=dict(size=12, color="black"), align="center",
             bordercolor="red", borderwidth=1, borderpad=4, bgcolor="rgba(255, 255, 255, 0.5)"
