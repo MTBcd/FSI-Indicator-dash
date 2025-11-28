@@ -669,7 +669,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             bgcolor="rgba(255, 255, 255, 0.5)", bordercolor="red", borderwidth=1, borderpad=4,
         )
         fig.add_annotation(
-            x=pd.to_datetime("2023-01-01"), y=-0.16, xref='x', yref='paper',
+            x=pd.to_datetime("2023-01-01"), y=-0.15, xref='x', yref='paper',
             text="<b>New Risk<br>Controls</b>", showarrow=False,
             font=dict(size=12, color="black"), align="center",
             bordercolor="red", borderwidth=1, borderpad=4, bgcolor="rgba(255, 255, 255, 0.5)"
@@ -677,30 +677,30 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
 
         neptune_end = pnl_series.index.max()
         # PORTFOLIO arrow
-        fig.add_shape(type="line", x0="2019-01-01", x1="2024-02-01", y0=-0.13, y1=-0.13,
+        fig.add_shape(type="line", x0="2019-01-01", x1="2024-02-01", y0=-0.065, y1=-0.065,
                       line=dict(color="darkblue", width=3), xref='x', yref='y', layer="above")
-        fig.add_annotation(x="2019-01-01", y=-0.13, xref='x', yref='y',
+        fig.add_annotation(x="2019-01-01", y=-0.065, xref='x', yref='y',
                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
                            arrowcolor="darkblue", ax=30, ay=0)
-        fig.add_annotation(x="2024-02-01", y=-0.13, xref='x', yref='y',
+        fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
                            arrowcolor="darkblue", ax=-30, ay=0)
-        fig.add_annotation(x="2021-07-01", y=-0.155, xref='x', yref='y',
+        fig.add_annotation(x="2021-07-01", y=-0.085, xref='x', yref='y',
                            text="<b>PORTFOLIO</b>", showarrow=False,
                            font=dict(family="Arial Black", size=16, color="darkblue"), align="center")
 
         # NEPTUNE arrow
-        fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.13, y1=-0.13,
+        fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.065, y1=-0.065,
                       line=dict(color="#3096B9", width=3), xref='x', yref='y', layer="above")
-        fig.add_annotation(x="2024-02-01", y=-0.13, xref='x', yref='y',
+        fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
                            arrowcolor="#3096B9", ax=30, ay=0)
-        fig.add_annotation(x=neptune_end, y=-0.13, xref='x', yref='y',
+        fig.add_annotation(x=neptune_end, y=-0.065, xref='x', yref='y',
                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
                            arrowcolor="#3096B9", ax=-30, ay=0)
         fig.add_annotation(
             x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
-            y=-0.155, xref='x', yref='y',
+            y=-0.085, xref='x', yref='y',
             text="<b>NEPTUNE</b>", showarrow=False,
             font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
         )
