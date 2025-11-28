@@ -685,9 +685,9 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
                            arrowcolor="darkblue", ax=-30, ay=0)
-        fig.add_annotation(x="2021-07-01", y=-0.085, xref='x', yref='y',
+        fig.add_annotation(x="2021-07-01", y=-0.075, xref='x', yref='y',
                            text="<b>PORTFOLIO</b>", showarrow=False,
-                           font=dict(family="Arial Black", size=16, color="darkblue"), align="center")
+                           font=dict(family="Arial Black", size=16, color="darkblue"), align="right")
 
         # NEPTUNE arrow
         fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.065, y1=-0.065,
@@ -700,7 +700,7 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
                            arrowcolor="#3096B9", ax=-30, ay=0)
         fig.add_annotation(
             x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
-            y=-0.085, xref='x', yref='y',
+            y=-0.075, xref='x', yref='y',
             text="<b>NEPTUNE</b>", showarrow=False,
             font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
         )
