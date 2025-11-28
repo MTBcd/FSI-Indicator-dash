@@ -869,7 +869,7 @@ def orient_fsi_and_omega(
 
 def classify_regime_global_fsi(
     fsi_series: pd.Series,
-    quantiles=(0.35, 0.77, 0.95) #(0.40, 0.80, 0.96)
+    quantiles=(0.33, 0.75, 0.95) #(0.40, 0.80, 0.96)
 ) -> pd.Series:
     """
     Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
@@ -1360,42 +1360,6 @@ def _cool_from_local_peak(
 
 
 
-def _lift_green_to_yellow_local(
-    regime_series: pd.Series,
-    fsi_series: pd.Series,
-    window: int = 252,          # lookback for "local" history (1 year)
-    local_quantile: float = 0.55  # threshold inside the local window
-) -> pd.Series:
-    """
-    Promote some Green days to Yellow based on *local* FSI level.
-
-    Logic:
-      - Compute a rolling local quantile of FSI over `window` days.
-      - If today's regime is Green but FSI is above that local quantile,
-        re-label it Yellow.
-
-    This gives you more Yellow in relatively elevated calm periods
-    (like late 2025) without touching the global quantiles.
-    """
-    reg_int = regime_series.map(REGIME_TO_INT).copy()
-    fsi = fsi_series.reindex(regime_series.index)
-
-    # rolling local threshold: "high vs recent year"
-    local_q = (
-        fsi.rolling(window, min_periods=20)
-           .quantile(local_quantile)
-    )
-
-    # where base regime is Green but FSI is locally high
-    mask = (
-        (reg_int == REGIME_TO_INT["Green"]) &
-        (fsi > local_q)
-    )
-
-    reg_int[mask] = REGIME_TO_INT["Yellow"]
-    return reg_int.map(INT_TO_REGIME)
-
-
 
 
 
@@ -1572,7 +1536,7 @@ def _lift_green_to_yellow_local(
 
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
-    quantiles=(0.35, 0.75, 0.95),
+    quantiles=(0.33, 0.75, 0.95),
     lambda_=0.90,
     change_quantile=0.90,
     level_quantile=0.50,
@@ -1625,14 +1589,6 @@ def classify_regime_fsi_improved(
         drop_amber=0.25,
         drop_red=0.20,
         min_down_days=3
-    )
-
-    # 3d. NEW: lift some Greens to Yellow if locally elevated
-    lifted_regime = _lift_green_to_yellow_local(
-        cooled_regime,
-        fsi_series=fsi,
-        window=252,         # 1-year local window
-        local_quantile=0.60 # tweak this to taste
     )
 
     # 4. Smoothing / hysteresis (to kill 1-day flips)
