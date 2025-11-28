@@ -869,7 +869,7 @@ def orient_fsi_and_omega(
 
 def classify_regime_global_fsi(
     fsi_series: pd.Series,
-    quantiles=(0.36, 0.77, 0.95) #(0.40, 0.80, 0.96)
+    quantiles=(0.35, 0.77, 0.95) #(0.40, 0.80, 0.96)
 ) -> pd.Series:
     """
     Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
@@ -1536,7 +1536,7 @@ def _cool_from_local_peak(
 
 def classify_regime_fsi_improved(
     fsi_series: pd.Series,
-    quantiles=(0.36, 0.75, 0.95),
+    quantiles=(0.35, 0.75, 0.95),
     lambda_=0.90,
     change_quantile=0.90,
     level_quantile=0.50,
