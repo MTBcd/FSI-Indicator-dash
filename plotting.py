@@ -16,10 +16,18 @@ from numpy import trapz
 # chart_studio.tools.set_credentials_file(username='Tuler', api_key='EOdkt6iCFZgZvJtTdFc6')
 
 
-
 # --- Shared axis styles (taken from PnL chart) ---
 AXIS_TITLE_FONT = dict(family="Arial Black", size=16, color="#163A7B")
 AXIS_TICK_FONT  = dict(family="Arial Black", size=12, color="#163A7B")
+
+# --- Shared figure geometry (height + margins) ---
+FIG_HEIGHT_MAIN   = 620   # main time-series charts (FSI + PnL)
+FIG_HEIGHT_SECOND = 520   # secondary charts (cumret, distribution, HHI if you want)
+
+# Tight margins so the plot fills vertically
+FIG_MARGIN_MAIN   = dict(l=70, r=200, t=40, b=60)   # FSI charts (legend on right)
+FIG_MARGIN_PNL    = dict(l=80, r=60,  t=40, b=70)   # PnL scatter
+FIG_MARGIN_CUMRET = dict(l=70, r=200, t=60, b=60)   # cum-ret (extra top for title)
 
 
 def _compute_date_ticks(index: pd.DatetimeIndex):
@@ -247,10 +255,36 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
 
+        # fig.update_layout(
+        #     template="plotly_white",
+        #     showlegend=True,
+        #     font=dict(family="Arial", size=13),  # body text
+        #     xaxis=dict(
+        #         type='date',
+        #         showgrid=False,
+        #         gridwidth=1.2,
+        #         gridcolor='black',
+        #         rangeslider=dict(visible=False),
+        #     ),
+        #     yaxis=dict(
+        #         title=dict(text="<b>Contribution to FSI</b>", font=AXIS_TITLE_FONT),
+        #         tickfont=AXIS_TICK_FONT,
+        #         showgrid=False,
+        #         gridwidth=1,
+        #         gridcolor='lightgray'
+        #     ),
+        # )
+
+
         fig.update_layout(
             template="plotly_white",
             showlegend=True,
-            font=dict(family="Arial", size=13),  # body text
+            font=dict(family="Arial", size=13),
+
+            # 🔹 Harmonised geometry
+            height=FIG_HEIGHT_MAIN,
+            margin=FIG_MARGIN_MAIN,
+
             xaxis=dict(
                 type='date',
                 showgrid=False,
@@ -266,6 +300,7 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
                 gridcolor='lightgray'
             ),
         )
+
 
         y_min = float(np.nanmin(fsi))
         y_max = float(np.nanmax(fsi))
@@ -286,6 +321,8 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
     except Exception as e:
         logging.error(f"Error plotting variable-level contributions: {e}", exc_info=True)
         return None
+
+
 
 
 
@@ -383,9 +420,34 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
 
+        # fig.update_layout(
+        #     template="plotly_white",
+        #     showlegend=True,
+        #     xaxis=dict(
+        #         type='date',
+        #         showgrid=False,
+        #         gridwidth=1.2,
+        #         gridcolor='black',
+        #         rangeslider=dict(visible=False),
+        #     ),
+        #     yaxis=dict(
+        #         title=dict(text="<b>Contribution to FSI</b>", font=AXIS_TITLE_FONT),
+        #         tickfont=AXIS_TICK_FONT,
+        #         showgrid=False,
+        #         gridwidth=1,
+        #         gridcolor='lightgray'
+        #     ),
+        # )
+
+
         fig.update_layout(
             template="plotly_white",
             showlegend=True,
+
+            # 🔹 Same thickness as other main charts
+            height=FIG_HEIGHT_MAIN,
+            margin=FIG_MARGIN_MAIN,
+
             xaxis=dict(
                 type='date',
                 showgrid=False,
@@ -401,6 +463,8 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
                 gridcolor='lightgray'
             ),
         )
+
+
 
         y_min = float(np.nanmin(fsi))
         y_max = float(np.nanmax(fsi))
@@ -533,6 +597,17 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             return fig
         pnl_series = pnl_df.loc[common_idx, 'P/L']
 
+        # --- NEW: limit FSI + regimes to the visible PnL window ---
+        pnl_start = pnl_series.index.min()
+        pnl_end   = pnl_series.index.max()
+
+        fsi_window = fsi.loc[pnl_start:pnl_end]
+        regimes_window = regimes
+        if regimes_window is not None:
+            if not isinstance(regimes_window, pd.Series):
+                regimes_window = pd.Series(regimes_window, index=fsi.index)
+            regimes_window = regimes_window.loc[fsi_window.index]
+
         # Y-axis grid at 3% spacing (guard against empty/NaN)
         if pnl_series.dropna().empty:
             fig.update_layout(title="PnL series is empty after aligning to FSI dates.")
@@ -554,9 +629,14 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             name='PnL'
         ))
 
-        # Regime ribbons (match FSI chart)
-        fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
+        # # Regime ribbons (match FSI chart)
+        # fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
+        # add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+
+        # Regime ribbons (restricted to PnL window)
+        fsi_daily, regimes_daily = _prepare_ribbons(fsi_window, regimes_window)
         add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+
 
         # VaR guard rails
         custom_color_dark = '#3096B9'
@@ -615,11 +695,40 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
         )
 
+        # fig.update_layout(
+        #     template="plotly_white",
+        #     showlegend=True,
+        #     xaxis=dict(
+        #         # title / ticks will be set by apply_standard_date_axis
+        #         type='date',
+        #         showgrid=False,
+        #         gridwidth=1.2,
+        #         gridcolor='black',
+        #         rangeslider=dict(visible=False),
+        #     ),
+        #     yaxis=dict(
+        #         title=dict(text="<b>PnL (%)</b>", font=AXIS_TITLE_FONT),
+        #         tickfont=AXIS_TICK_FONT,
+        #         tickvals=yticks,
+        #         ticktext=yticktext,
+        #         tickmode="array",
+        #         showgrid=False,
+        #         range=[yticks[0], yticks[-1]],
+        #         fixedrange=True,
+        #     )
+        # )
+
+
         fig.update_layout(
             template="plotly_white",
             showlegend=True,
+
+            # 🔹 Same thickness as FSI charts
+            height=FIG_HEIGHT_MAIN,
+            margin=FIG_MARGIN_PNL,
+
             xaxis=dict(
-                # title / ticks will be set by apply_standard_date_axis
+                # title / ticks overridden by apply_standard_date_axis
                 type='date',
                 showgrid=False,
                 gridwidth=1.2,
@@ -638,11 +747,17 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             )
         )
 
+
+
         # Apply standardized date axis using PnL dates
         apply_standard_date_axis(fig, pnl_series.index, title_text="<b>Date</b>")
 
-        # Keep x-range consistent with FSI window
-        fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
+        # # Keep x-range consistent with FSI window
+        # fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
+        # return fig
+
+        # 🔹 Keep x-range consistent with the *selected PnL* window
+        fig.update_xaxes(range=[pnl_start, pnl_end])
         return fig
 
     except Exception as e:
@@ -889,9 +1004,32 @@ def make_cumret_figure(
         logging.error(f"Error adding regime ribbons to cumret chart: {e}", exc_info=True)
 
 
+    # fig.update_layout(
+    #     title="Cumulative Returns (rebased to 0% at selected start date)",
+    #     xaxis_title=None,  # we set via apply_standard_date_axis
+    #     yaxis_title=None,
+    #     hovermode="x unified",
+    #     legend=dict(
+    #         orientation="v",
+    #         yanchor="top",
+    #         y=1.0,
+    #         xanchor="left",
+    #         x=1.02,
+    #     ),
+    #     margin=dict(l=50, r=160, t=20, b=40),
+    # )
+    # fig.update_xaxes(showgrid=False, zeroline=False)
+    # fig.update_yaxes(
+    #     title=dict(text="<b>Cumulative Return (%)</b>", font=AXIS_TITLE_FONT),
+    #     tickfont=AXIS_TICK_FONT,
+    #     showgrid=False,
+    #     zeroline=False,
+    # )
+
+
     fig.update_layout(
         title="Cumulative Returns (rebased to 0% at selected start date)",
-        xaxis_title=None,  # we set via apply_standard_date_axis
+        xaxis_title=None,  # handled by apply_standard_date_axis
         yaxis_title=None,
         hovermode="x unified",
         legend=dict(
@@ -901,7 +1039,10 @@ def make_cumret_figure(
             xanchor="left",
             x=1.02,
         ),
-        margin=dict(l=50, r=160, t=20, b=40),
+
+        # 🔹 Slightly thinner but still harmonised
+        height=FIG_HEIGHT_SECOND,
+        margin=FIG_MARGIN_CUMRET,
     )
     fig.update_xaxes(showgrid=False, zeroline=False)
     fig.update_yaxes(
@@ -910,6 +1051,8 @@ def make_cumret_figure(
         showgrid=False,
         zeroline=False,
     )
+
+
 
     # 🔹 Standardized x-axis using cumret index
     apply_standard_date_axis(fig, cum_pct.index, title_text="<b>Date</b>")
