@@ -15,6 +15,63 @@ from numpy import trapz
  
 # chart_studio.tools.set_credentials_file(username='Tuler', api_key='EOdkt6iCFZgZvJtTdFc6')
 
+
+
+# --- Shared axis styles (taken from PnL chart) ---
+AXIS_TITLE_FONT = dict(family="Arial Black", size=16, color="#163A7B")
+AXIS_TICK_FONT  = dict(family="Arial Black", size=12, color="#163A7B")
+
+
+def _compute_date_ticks(index: pd.DatetimeIndex):
+    """
+    Build x-axis tick positions and labels based on the selected time window:
+      - > 3 years  -> yearly ticks: 2019, 2020, ...
+      - <= 3 years -> quarterly ticks: Q1 2023, Q2 2023, ...
+    """
+    idx = pd.to_datetime(index)
+    if idx.empty:
+        return [], []
+
+    start = idx.min()
+    end   = idx.max()
+
+    span_years = (end - start).days / 365.25
+
+    if span_years > 3:
+        # Yearly ticks
+        years = range(start.year, end.year + 1)
+        tickvals = [pd.Timestamp(f"{y}-01-01") for y in years]
+        ticktext = [str(y) for y in years]
+    else:
+        # Quarterly ticks
+        quarters = pd.period_range(start=start, end=end, freq="Q")
+        tickvals = [p.start_time for p in quarters]
+        ticktext = [f"Q{p.quarter} {p.year}" for p in quarters]
+
+    return tickvals, ticktext
+
+
+def apply_standard_date_axis(fig: go.Figure, index, title_text: str = "<b>Date</b>"):
+    """
+    Apply the standard x-axis style + date frequency rule to a figure.
+    """
+    tickvals, ticktext = _compute_date_ticks(pd.to_datetime(index))
+
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=tickvals,
+        ticktext=ticktext,
+        title=dict(text=title_text, font=AXIS_TITLE_FONT),
+        tickfont=AXIS_TICK_FONT,
+        type="date",
+        rangeslider=dict(visible=False),
+        showgrid=False,
+        gridwidth=1.2,
+        gridcolor="black",
+    )
+
+
+
 market_events = {
     # "2018-12-24": "<b>Fed hikes<br>market panic</b>",
     # "2019-08-14": "<b>Yield curve<br>inversion</b>",
@@ -189,21 +246,21 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
         for d in year_starts:
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
+
         fig.update_layout(
             template="plotly_white",
             showlegend=True,
-            font=dict(family="Arial", size=13),
+            font=dict(family="Arial", size=13),  # body text
             xaxis=dict(
-                title="Date",
-                rangeslider=dict(visible=False),
                 type='date',
                 showgrid=False,
                 gridwidth=1.2,
                 gridcolor='black',
-                tickformat='%Y'
+                rangeslider=dict(visible=False),
             ),
             yaxis=dict(
-                title="Contribution to FSI",
+                title=dict(text="<b>Contribution to FSI</b>", font=AXIS_TITLE_FONT),
+                tickfont=AXIS_TICK_FONT,
                 showgrid=False,
                 gridwidth=1,
                 gridcolor='lightgray'
@@ -219,14 +276,57 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
             separatethousands=False,
             exponentformat="none",
             showexponent="none",
-            tickfont=dict(family="Arial", size=13)
         )
+
+        # 🔹 Standardized x-axis (same style + frequency rule as PnL)
+        apply_standard_date_axis(fig, contribs_by_group.index, title_text="<b>Date</b>")
 
         return fig
 
     except Exception as e:
         logging.error(f"Error plotting variable-level contributions: {e}", exc_info=True)
         return None
+
+
+
+    #     fig.update_layout(
+    #         template="plotly_white",
+    #         showlegend=True,
+    #         font=dict(family="Arial", size=13),
+    #         xaxis=dict(
+    #             title="Date",
+    #             rangeslider=dict(visible=False),
+    #             type='date',
+    #             showgrid=False,
+    #             gridwidth=1.2,
+    #             gridcolor='black',
+    #             tickformat='%Y'
+    #         ),
+    #         yaxis=dict(
+    #             title="Contribution to FSI",
+    #             showgrid=False,
+    #             gridwidth=1,
+    #             gridcolor='lightgray'
+    #         ),
+    #     )
+
+    #     y_min = float(np.nanmin(fsi))
+    #     y_max = float(np.nanmax(fsi))
+    #     fix_axis_minus(fig, y_min, y_max)
+
+    #     fig.update_yaxes(
+    #         tickformat=".2f",
+    #         separatethousands=False,
+    #         exponentformat="none",
+    #         showexponent="none",
+    #         tickfont=dict(family="Arial", size=13)
+    #     )
+
+    #     return fig
+
+    # except Exception as e:
+    #     logging.error(f"Error plotting variable-level contributions: {e}", exc_info=True)
+    #     return None
 
 
 def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=None):
@@ -282,20 +382,20 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
         for d in year_starts:
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
+
         fig.update_layout(
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
-                title="Date",
-                rangeslider=dict(visible=False),
                 type='date',
                 showgrid=False,
                 gridwidth=1.2,
                 gridcolor='black',
-                tickformat='%Y'
+                rangeslider=dict(visible=False),
             ),
             yaxis=dict(
-                title="Contribution to FSI",
+                title=dict(text="<b>Contribution to FSI</b>", font=AXIS_TITLE_FONT),
+                tickfont=AXIS_TICK_FONT,
                 showgrid=False,
                 gridwidth=1,
                 gridcolor='lightgray'
@@ -311,14 +411,57 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
             separatethousands=False,
             exponentformat="none",
             showexponent="none",
-            tickfont=dict(family="Arial", size=13)
         )
+
+        # 🔹 Standardized x-axis
+        apply_standard_date_axis(fig, contribs_by_group.index, title_text="<b>Date</b>")
 
         return fig
 
     except Exception as e:
         logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
         return None
+
+
+
+
+    #     fig.update_layout(
+    #         template="plotly_white",
+    #         showlegend=True,
+    #         xaxis=dict(
+    #             title="Date",
+    #             rangeslider=dict(visible=False),
+    #             type='date',
+    #             showgrid=False,
+    #             gridwidth=1.2,
+    #             gridcolor='black',
+    #             tickformat='%Y'
+    #         ),
+    #         yaxis=dict(
+    #             title="Contribution to FSI",
+    #             showgrid=False,
+    #             gridwidth=1,
+    #             gridcolor='lightgray'
+    #         ),
+    #     )
+
+    #     y_min = float(np.nanmin(fsi))
+    #     y_max = float(np.nanmax(fsi))
+    #     fix_axis_minus(fig, y_min, y_max)
+
+    #     fig.update_yaxes(
+    #         tickformat=".2f",
+    #         separatethousands=False,
+    #         exponentformat="none",
+    #         showexponent="none",
+    #         tickfont=dict(family="Arial", size=13)
+    #     )
+
+    #     return fig
+
+    # except Exception as e:
+    #     logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
+    #     return None
 
 
 def plot_hhi_bar(ranking_shares: pd.Series, top_n: int = 15, title_suffix: str = ""):
@@ -476,21 +619,16 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             template="plotly_white",
             showlegend=True,
             xaxis=dict(
-                title=dict(text="<b>Date</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
-                tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
-                rangeslider=dict(visible=False),
+                # title / ticks will be set by apply_standard_date_axis
                 type='date',
                 showgrid=False,
                 gridwidth=1.2,
                 gridcolor='black',
-                tickformatstops=[
-                    dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),
-                    dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),
-                ]
+                rangeslider=dict(visible=False),
             ),
             yaxis=dict(
-                title=dict(text="<b>PnL (%)</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
-                tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+                title=dict(text="<b>PnL (%)</b>", font=AXIS_TITLE_FONT),
+                tickfont=AXIS_TICK_FONT,
                 tickvals=yticks,
                 ticktext=yticktext,
                 tickmode="array",
@@ -499,6 +637,9 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
                 fixedrange=True,
             )
         )
+
+        # Apply standardized date axis using PnL dates
+        apply_standard_date_axis(fig, pnl_series.index, title_text="<b>Date</b>")
 
         # Keep x-range consistent with FSI window
         fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
@@ -510,6 +651,50 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
         fig = go.Figure()
         fig.update_layout(title="Could not render PnL chart. Check logs for details.")
         return fig
+
+
+
+
+
+
+    #     fig.update_layout(
+    #         template="plotly_white",
+    #         showlegend=True,
+    #         xaxis=dict(
+    #             title=dict(text="<b>Date</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
+    #             tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+    #             rangeslider=dict(visible=False),
+    #             type='date',
+    #             showgrid=False,
+    #             gridwidth=1.2,
+    #             gridcolor='black',
+    #             tickformatstops=[
+    #                 dict(dtickrange=[None, 1000 * 60 * 60 * 24 * 366], value="%Y"),
+    #                 dict(dtickrange=[1000 * 60 * 60 * 24 * 28, 1000 * 60 * 60 * 24 * 366], value="%b-%Y"),
+    #             ]
+    #         ),
+    #         yaxis=dict(
+    #             title=dict(text="<b>PnL (%)</b>", font=dict(family="Arial Black", size=16, color="#163A7B")),
+    #             tickfont=dict(family="Arial Black", size=12, color="#163A7B"),
+    #             tickvals=yticks,
+    #             ticktext=yticktext,
+    #             tickmode="array",
+    #             showgrid=False,
+    #             range=[yticks[0], yticks[-1]],
+    #             fixedrange=True,
+    #         )
+    #     )
+
+    #     # Keep x-range consistent with FSI window
+    #     fig.update_xaxes(range=[fsi.index.min(), fsi.index.max()])
+    #     return fig
+
+    # except Exception as e:
+    #     logging.error(f"Error plotting PnL with regime ribbons: {e}", exc_info=True)
+    #     # return an empty, informative figure instead of None
+    #     fig = go.Figure()
+    #     fig.update_layout(title="Could not render PnL chart. Check logs for details.")
+    #     return fig
 
 
 def save_fsi_charts_to_html(fig1, fig2, fig3=None, filename="fsi_combined_report.html"):
@@ -703,21 +888,52 @@ def make_cumret_figure(
     except Exception as e:
         logging.error(f"Error adding regime ribbons to cumret chart: {e}", exc_info=True)
 
+
     fig.update_layout(
         title="Cumulative Returns (rebased to 0% at selected start date)",
-        xaxis_title="Date",
-        yaxis_title="Cumulative Return (%)",
+        xaxis_title=None,  # we set via apply_standard_date_axis
+        yaxis_title=None,
         hovermode="x unified",
         legend=dict(
-            orientation="v",   # vertical legend
+            orientation="v",
             yanchor="top",
-            y=1.0,             # top
+            y=1.0,
             xanchor="left",
-            x=1.02,            # just to the right of the plot area
+            x=1.02,
         ),
         margin=dict(l=50, r=160, t=20, b=40),
     )
     fig.update_xaxes(showgrid=False, zeroline=False)
-    fig.update_yaxes(showgrid=False, zeroline=False)
+    fig.update_yaxes(
+        title=dict(text="<b>Cumulative Return (%)</b>", font=AXIS_TITLE_FONT),
+        tickfont=AXIS_TICK_FONT,
+        showgrid=False,
+        zeroline=False,
+    )
+
+    # 🔹 Standardized x-axis using cumret index
+    apply_standard_date_axis(fig, cum_pct.index, title_text="<b>Date</b>")
 
     return fig
+
+
+
+
+    # fig.update_layout(
+    #     title="Cumulative Returns (rebased to 0% at selected start date)",
+    #     xaxis_title="Date",
+    #     yaxis_title="Cumulative Return (%)",
+    #     hovermode="x unified",
+    #     legend=dict(
+    #         orientation="v",   # vertical legend
+    #         yanchor="top",
+    #         y=1.0,             # top
+    #         xanchor="left",
+    #         x=1.02,            # just to the right of the plot area
+    #     ),
+    #     margin=dict(l=50, r=160, t=20, b=40),
+    # )
+    # fig.update_xaxes(showgrid=False, zeroline=False)
+    # fig.update_yaxes(showgrid=False, zeroline=False)
+
+    # return fig
