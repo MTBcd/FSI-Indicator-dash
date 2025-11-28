@@ -21,8 +21,8 @@ AXIS_TITLE_FONT = dict(family="Arial Black", size=16, color="#163A7B")
 AXIS_TICK_FONT  = dict(family="Arial Black", size=12, color="#163A7B")
 
 # --- Shared figure geometry (height + margins) ---
-FIG_HEIGHT_MAIN   = 620   # main time-series charts (FSI + PnL)
-FIG_HEIGHT_SECOND = 520   # secondary charts (cumret, distribution, HHI if you want)
+FIG_HEIGHT_MAIN   = 550   # main time-series charts (FSI + PnL)
+FIG_HEIGHT_SECOND = 550   # secondary charts (cumret, distribution, HHI if you want)
 
 # Tight margins so the plot fills vertically
 FIG_MARGIN_MAIN   = dict(l=70, r=200, t=40, b=60)   # FSI charts (legend on right)
