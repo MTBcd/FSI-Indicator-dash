@@ -1364,7 +1364,7 @@ def _lift_green_to_yellow_local(
     regime_series: pd.Series,
     fsi_series: pd.Series,
     window: int = 252,          # lookback for "local" history (1 year)
-    local_quantile: float = 0.60  # threshold inside the local window
+    local_quantile: float = 0.55  # threshold inside the local window
 ) -> pd.Series:
     """
     Promote some Green days to Yellow based on *local* FSI level.
