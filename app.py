@@ -613,7 +613,7 @@ def add_fsi_event(n_clicks, date_str, label, events):
     prevent_initial_call=True
 )
 
-def run_full_pipeline(n_clicks, regime_calib_end):
+def run_full_pipeline(n_clicks):
     import time
 
     cache_key = "fsi_analysis_latest_hybrid_v2"
