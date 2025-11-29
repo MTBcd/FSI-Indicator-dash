@@ -10,6 +10,7 @@ import diskcache
 import time
 import numpy as np
 import logging
+import os
   
 # --- Your framework imports ---
 from main import load_configuration, merge_data
@@ -609,7 +610,6 @@ def add_fsi_event(n_clicks, date_str, label, events):
      Output('run-btn', 'disabled'), 
      Output('timestamp-label', 'children')],
     Input('run-btn', 'n_clicks'),
-    State('regime-calib-end', 'date'),
     prevent_initial_call=True
 )
 
@@ -692,20 +692,9 @@ def run_full_pipeline(n_clicks, regime_calib_end):
     except Exception:
         pass
 
-    # --- Regime classification on oriented FSI ---
+    # --- Regime classification on oriented FSI (full-sample calibration) ---
     fsi = variable_contribs['FSI']
-
-    # Calibration mask: from first FSI date to selected calibration end date
-    if regime_calib_end is not None:
-        calib_end = pd.to_datetime(regime_calib_end)
-        calib_mask = fsi.index <= calib_end
-    else:
-        calib_mask = None  # fallback: full-sample calibration
-
-    regimes_full = classify_regime_fsi_improved(fsi, calibration_mask=calib_mask)
-
-    # --- Regime classification (fixed, not recomputed on UI tweaks) ---
-    # regimes_full = classify_regime_fsi_improved(variable_contribs['FSI'])
+    regimes_full = classify_regime_fsi_improved(fsi)
 
     # Align DF and attach regimes (for any lightweight displays later)
     df_aligned = df.loc[fsi_series.index].copy()
