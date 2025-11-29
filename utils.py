@@ -7,7 +7,6 @@ from scipy.stats import rankdata
 from pykalman import KalmanFilter
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
-from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV, StratifiedKFold
 from sklearn.model_selection import BaseCrossValidator
@@ -16,6 +15,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit
 import warnings
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 # warnings.filterwarnings("ignore", category=DeprecationWarning)

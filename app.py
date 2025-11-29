@@ -705,7 +705,7 @@ def run_full_pipeline(n_clicks, regime_calib_end):
     regimes_full = classify_regime_fsi_improved(fsi, calibration_mask=calib_mask)
 
     # --- Regime classification (fixed, not recomputed on UI tweaks) ---
-    regimes_full = classify_regime_fsi_improved(variable_contribs['FSI'])
+    # regimes_full = classify_regime_fsi_improved(variable_contribs['FSI'])
 
     # Align DF and attach regimes (for any lightweight displays later)
     df_aligned = df.loc[fsi_series.index].copy()
