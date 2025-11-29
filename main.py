@@ -7,17 +7,16 @@ import numpy as np
 import os
 import time
 from data_fetching import get_all_series
-from fsi_estimation import (compute_variable_contributions, 
-                            compute_timevarying_contributions, 
+from fsi_estimation import (compute_timevarying_contributions, 
                             estimate_fsi_expanding_with_als)
 from plotting import (
     plot_group_contributions_with_regime, plot_grouped_contributions,
     plot_pnl_with_regime_ribbons, save_fsi_charts_to_html
 )
 from utils import (
-    aggregate_contributions_by_group, smooth_transition_regime, regime_from_smooth_weight, orient_fsi_and_omega,
-    moving_average_deviation, absolute_deviation_rotated, absolute_deviation, build_dynamic_group_map,
-    classify_risk_regime_hybrid, kalman_impute, impute_data, classify_adaptive_regime
+    aggregate_contributions_by_group, orient_fsi_and_omega,
+    moving_average_deviation, absolute_deviation, build_dynamic_group_map,
+    classify_risk_regime_hybrid, kalman_impute, 
 )
 
 
@@ -173,61 +172,6 @@ def merge_data(config, max_age_hours=0):
                 df[f'HY_IG_spread_{window}'] = moving_average_deviation(df['HYG-LQD Spread'], window)
 
 
-
-
-
-        # for window in windows:
-        #     # --- Volatility ---
-        #     if 'VIX' in df.columns:
-        #         df[f'VIX_dev_{window}'] = moving_average_deviation(df['VIX'], window)
-        #     if 'MOVE Index' in df.columns:
-        #         df[f'MOVE_dev_{window}'] = moving_average_deviation(df['MOVE Index'], window)
-        #     if 'OVX' in df.columns:
-        #         df[f'OVX_dev_{window}'] = moving_average_deviation(df['OVX'], window)
-        #     if 'VIX3M' in df.columns:
-        #         df[f'VIX3M_dev_{window}'] = moving_average_deviation(df['VIX3M'], window)
-        #         if 'VIX' in df.columns:
-        #             # optional term-structure measure
-        #             spread = (df['VIX'] - df['VIX3M']).rename('VIX_minus_VIX3M')
-        #             df[f'VIX_VIX3M_spread_dev_{window}'] = moving_average_deviation(spread, window)
-
-        #     # --- Safe-Haven / FX ---
-        #     if 'Gold Price' in df.columns:
-        #         df[f'Gold_dev_{window}'] = moving_average_deviation(df['Gold Price'], window)
-        #     if 'USD Index (DXY)' in df.columns:
-        #         df[f'USD_stress_{window}'] = moving_average_deviation(df['USD Index (DXY)'], window, invert=True)
-        #     if 'USDJPY' in df.columns:
-        #         df[f'USDJPY_dev_{window}'] = moving_average_deviation(df['USDJPY'], window, invert=True)
-
-        #     # --- Rates ---
-        #     if '10Y Yield' in df.columns:
-        #         df[f'10Y_rate_{window}'] = absolute_deviation(df['10Y Yield'], window, invert=True)
-        #     if '2Y Yield' in df.columns:
-        #         df[f'2Y_rate_{window}'] = absolute_deviation(df['2Y Yield'], window, invert=True)
-        #     if '3M T-Bill' in df.columns:
-        #         df[f'3M_TBill_stress_{window}'] = absolute_deviation_rotated(df['3M T-Bill'], window)
-        #     if '10Y-3M Slope' in df.columns:
-        #         df[f'10Y_3M_slope_dev_{window}'] = absolute_deviation(df['10Y-3M Slope'], window, invert=True)
-
-        #     # --- Funding & Liquidity ---
-        #     if 'EFFR' in df.columns:
-        #         df[f'EFFR_stress_{window}'] = absolute_deviation(df['EFFR'], window)
-        #     # if 'EFFR_VOLUME' in df.columns:
-        #     #     df[f'EFFR_VOLUME_{window}'] = absolute_deviation(df['EFFR_VOLUME'], window)
-
-        #     # --- Credit/OAS ---
-        #     if 'US IG OAS' in df.columns:
-        #         df[f'IG_OAS_dev_{window}'] = absolute_deviation(df['US IG OAS'], window)
-        #     if 'US HY OAS' in df.columns:
-        #         df[f'HY_OAS_dev_{window}'] = absolute_deviation(df['US HY OAS'], window)
-        #     if 'US BBB OAS' in df.columns:
-        #         df[f'BBB_OAS_dev_{window}'] = absolute_deviation(df['US BBB OAS'], window)
-        #     if 'HYG-LQD Spread' in df.columns:
-        #         df[f'HY_IG_spread_{window}'] = moving_average_deviation(df['HYG-LQD Spread'], window)
-
-
-
-
         # --- 7. Drop raw columns to keep only engineered features ---
         raw_cols = [
             'VIX', 'MOVE Index', 'USD Index (DXY)', 'Gold Price',
@@ -273,13 +217,6 @@ def main():
         logging.error("Failed to merge data. Exiting.")
         return
 
-    # fsi_series, omega_history, cos_sim_series, unstable_dates = estimate_fsi_recursive_rolling_with_stability(
-    #     df,
-    #     window_size=int(config['fsi']['window_size']),
-    #     n_iter=int(config['fsi']['n_iter']),
-    #     stability_threshold=float(config['fsi']['stability_threshold'])
-    # )
-
 
     min_history = int(config['fsi']['window_size'])
 
@@ -290,10 +227,6 @@ def main():
         stability_threshold=float(config['fsi']['stability_threshold'])
     )
 
-    # freeze_after_days = 90
-    # stability_threshold = 0.8
-    # min_corr_to_freeze = 0.10
-    # allow_flip_cosine_thresh = 0.2
 
     fsi_series, omega_history, orient_audit = orient_fsi_and_omega(
         fsi_series=fsi_series,
@@ -306,17 +239,6 @@ def main():
         allow_flip_cosine_thresh=0.2
     )
 
-    # # after obtaining fsi_series, omega_history we chack the correlation 
-    # W = int(config['fsi']['window_size'])
-    # idx_tail = fsi_series.index[-60:]
-    # mu = df.rolling(W).mean().reindex(idx_tail)
-    # sd = df.rolling(W).std().replace(0, np.nan).reindex(idx_tail)
-    # Z = (df.reindex(idx_tail) - mu) / sd
-
-    # common = omega_history.columns.intersection(Z.columns)
-    # approx_fsi = (Z[common] * omega_history.reindex(idx_tail)[common]).sum(axis=1)
-    # corr = approx_fsi.corr(fsi_series.reindex(idx_tail))
-    # logging.info(f"[QC] Corr(FSI, Σ z⊙ω) last 60d = {corr:.3f}")
 
     min_history = int(config['fsi']['window_size'])
     idx_tail = fsi_series.index[-60:]
@@ -330,8 +252,6 @@ def main():
     corr = approx_fsi.corr(fsi_series.reindex(idx_tail))
     logging.info(f"[QC] Corr(FSI, Σ z⊙ω) last 60d = {corr:.3f}")
 
-
-
     # Persist audit log
     base_path = "./cache-directory"
     orient_audit_path = os.path.join(base_path, "qc", "orientation_flip_audit.csv")
@@ -343,12 +263,6 @@ def main():
         pd.DataFrame(columns=["date","reason"]).to_csv(orient_audit_path, index=False)
 
 
-    # # A1: leakage-free contributions using contemporaneous ω_t and window-standardization
-    # logging.info("Computing contributions...")
-    # variable_contribs = compute_timevarying_contributions(
-    #     df.loc[fsi_series.index], omega_history, window_size=int(config['fsi']['window_size'])
-    # )
-
     logging.info("Computing contributions...")
     min_history = int(config['fsi']['window_size'])
     variable_contribs = compute_timevarying_contributions(
@@ -356,8 +270,6 @@ def main():
         omega_history,
         min_history=min_history
     )
-
-
 
     group_map = build_dynamic_group_map(variable_contribs)  # build from actually PRESENT columns
     grouped_contribs = aggregate_contributions_by_group(variable_contribs, group_map)

@@ -5,34 +5,20 @@ import pandas as pd
 import logging
 from scipy.stats import rankdata
 from pykalman import KalmanFilter
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
-from xgboost import XGBClassifier
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import IterativeImputer
 from sklearn.linear_model import BayesianRidge
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV, StratifiedKFold
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import BaseCrossValidator
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import TimeSeriesSplit
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 # warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-def normalize_loadings(weights):
-    """Normalize the loadings vector."""
-    try:
-        return weights / np.linalg.norm(weights)
-    except Exception as e:
-        logging.error(f"Error normalizing loadings: {e}", exc_info=True)
-        return weights
 
 def moving_average_deviation(series, window, invert=False):
     """Calculate the deviation from the moving average."""
@@ -42,15 +28,6 @@ def moving_average_deviation(series, window, invert=False):
         return -dev if invert else dev
     except Exception as e:
         logging.error(f"Error calculating moving average deviation: {e}", exc_info=True)
-        return pd.Series()
-
-def absolute_deviation_rotated(series, window):
-    """Calculate the rotated absolute deviation from the moving average."""
-    try:
-        ma = series.rolling(window).mean()
-        return ma - series
-    except Exception as e:
-        logging.error(f"Error calculating absolute deviation rotated: {e}", exc_info=True)
         return pd.Series()
 
 def absolute_deviation(series, window, invert=False):
@@ -103,48 +80,10 @@ def kalman_impute(series):
         logging.error(f"Error imputing data using Kalman filter: {e}", exc_info=True)
         return series
 
-def smart_impute(series):
-    """Impute missing values in a series using a hybrid approach."""
-    try:
-        if series.isna().sum() == 0:
-            return series
-
-        # Defensive cleanup
-        series = series.replace([np.inf, -np.inf], np.nan)
-
-        missing_ratio = series.isna().mean()
-
-        if series.isna().sum() < 5:
-            return series.ffill().bfill()
-
-        elif missing_ratio < 0.1:
-            return series.fillna(series.rolling(window=15, min_periods=1).mean())
-
-        elif missing_ratio < 0.3:
-            return kalman_impute(series)
-
-        else:
-            logging.warning(f"Dropping or neutralizing highly missing series: {series.name}")
-            return pd.Series(index=series.index, data=np.nan)
-    except Exception as e:
-        logging.error(f"Error imputing data: {e}", exc_info=True)
-        return pd.Series(index=series.index, data=np.nan)
-
 def impute_data(df):
     imputer = IterativeImputer(random_state=42, max_iter=10, estimator=BayesianRidge())
     df_imputed = pd.DataFrame(imputer.fit_transform(df), index=df.index, columns=df.columns)
     return df_imputed
-
-
-
-
-###################### LESS SENSITIVE framework ##############################
-
-def adaptive_quantile_thresholds(series, window=500, quantiles=(0.45, 0.80, 0.96)):
-    q_green = series.rolling(window, min_periods=window//2).quantile(quantiles[0])
-    q_amber = series.rolling(window, min_periods=window//2).quantile(quantiles[1])
-    q_red   = series.rolling(window, min_periods=window//2).quantile(quantiles[2])
-    return pd.DataFrame({'green': q_green, 'amber': q_amber, 'red': q_red})
 
 def ewma_volatility(series, lambda_=0.97):
     returns = series.pct_change().dropna()
@@ -152,13 +91,6 @@ def ewma_volatility(series, lambda_=0.97):
     span = (2 / (1 - lambda_)) - 1
     ewma_vol = squared_returns.ewm(span=span, min_periods=30).mean().apply(np.sqrt)
     return ewma_vol.reindex(series.index).ffill()
-
-def volatility_spike_flags(series, vol_window=300, spike_quantile=0.95, lambda_=0.97):
-    ewma_vol = ewma_volatility(series, lambda_)
-    vol_change = ewma_vol.diff()
-    spike_threshold = vol_change.rolling(vol_window).quantile(spike_quantile)
-    spike_flags = vol_change > spike_threshold
-    return spike_flags.fillna(False)
 
 def classify_risk_regime_hybrid(
     fsi_series,
@@ -207,8 +139,7 @@ def classify_risk_regime_hybrid(
         return pd.Series()
 
 
-##########################################################
-##########################################################
+
 
 class PurgedTimeSeriesSplit(BaseCrossValidator):
     """
@@ -354,154 +285,6 @@ def predict_regime_probability(
 
     return most_recent_proba, y_proba_all, feature_importance, best_model, best_score
 
-
-###########################################################
-##########################################################
-
-
-def classify_adaptive_regime(fsi_series, quantile_window=500, vol_window=250, spike_quantile=0.9, lambda_=0.94):
-    thresholds = adaptive_quantile_thresholds(fsi_series, window=quantile_window)
-    spikes = volatility_spike_flags(fsi_series, vol_window=vol_window, spike_quantile=spike_quantile, lambda_=lambda_)
-    regimes = pd.Series(index=fsi_series.index, dtype='object')
-    for date in fsi_series.index:
-        try:
-            fsi_value = fsi_series.loc[date]
-            green_thr = thresholds.at[date, 'green']
-            amber_thr = thresholds.at[date, 'amber']
-            red_thr = thresholds.at[date, 'red']
-            if spikes.at[date]:
-                if fsi_value <= green_thr:
-                    regimes.at[date] = 'Yellow'
-                elif fsi_value <= amber_thr:
-                    regimes.at[date] = 'Amber'
-                else:
-                    regimes.at[date] = 'Red'
-            else:
-                if fsi_value <= green_thr:
-                    regimes.at[date] = 'Green'
-                elif fsi_value <= amber_thr:
-                    regimes.at[date] = 'Yellow'
-                elif fsi_value <= red_thr:
-                    regimes.at[date] = 'Amber'
-                else:
-                    regimes.at[date] = 'Red'
-        except Exception as e:
-            regimes.at[date] = 'Green'
-    return regimes.reindex(fsi_series.index).ffill().bfill()
-
-##################################
-
-
-def classify_adaptive_regime_hybrid_fallback(
-    fsi_series, 
-    quantile_window=500, 
-    vol_window=250, 
-    spike_quantile=0.9, 
-    lambda_=0.94
-):
-    # 1. Compute rolling quantile thresholds as usual
-    thresholds = adaptive_quantile_thresholds(fsi_series, window=quantile_window)
-    spikes = volatility_spike_flags(fsi_series, vol_window=vol_window, spike_quantile=spike_quantile, lambda_=lambda_)
-    regimes = pd.Series(index=fsi_series.index, dtype='object')
-
-    # 2. Determine cutoff where quantile window is populated (first non-NaN green)
-    valid_quantile_mask = ~thresholds['green'].isna()
-    first_valid_idx = valid_quantile_mask.idxmax()  # first index where green is not nan
-    if isinstance(first_valid_idx, bool):  # If all values are False, idxmax returns False
-        first_valid_idx = None
-
-    # 3. For initial region, use hybrid (static quantile) approach
-    if first_valid_idx is not None:
-        # Hybrid regime for first_valid_idx
-        pre_regime = classify_risk_regime_hybrid(
-            fsi_series.loc[:first_valid_idx],
-            vol_window=20,  # Use your chosen value
-            vol_spike_quantile=spike_quantile
-        )
-        regimes.loc[:first_valid_idx] = pre_regime
-
-        # Rolling regime for rest
-        for date in fsi_series.index[fsi_series.index.get_loc(first_valid_idx):]:
-            try:
-                fsi_value = fsi_series.loc[date]
-                green_thr = thresholds.at[date, 'green']
-                amber_thr = thresholds.at[date, 'amber']
-                red_thr = thresholds.at[date, 'red']
-                if pd.isna(green_thr) or pd.isna(amber_thr) or pd.isna(red_thr):
-                    regimes.at[date] = 'Yellow'
-                    continue
-                if spikes.at[date]:
-                    if fsi_value <= green_thr:
-                        regimes.at[date] = 'Yellow'
-                    elif fsi_value <= amber_thr:
-                        regimes.at[date] = 'Amber'
-                    else:
-                        regimes.at[date] = 'Red'
-                else:
-                    if fsi_value <= green_thr:
-                        regimes.at[date] = 'Green'
-                    elif fsi_value <= amber_thr:
-                        regimes.at[date] = 'Yellow'
-                    elif fsi_value <= red_thr:
-                        regimes.at[date] = 'Amber'
-                    else:
-                        regimes.at[date] = 'Red'
-            except Exception as e:
-                regimes.at[date] = 'Yellow'
-    else:
-        # If for some reason thresholds are always nan, fallback entirely to hybrid
-        regimes = classify_risk_regime_hybrid(
-            fsi_series,
-            vol_window=20,
-            vol_spike_quantile=spike_quantile
-        )
-
-    regimes = regimes.ffill().bfill()
-    return regimes
-
-
-
-##################################
-
-
-
-def smooth_transition_regime(fsi_series, gamma=2.5, c=0.5):
-    """Calculate smooth transition weights for regime classification."""
-    try:
-        transition_weight = 1 / (1 + np.exp(-gamma * (fsi_series - c)))
-        return pd.Series(transition_weight, index=fsi_series.index)
-    except Exception as e:
-        logging.error(f"Error calculating smooth transition regime: {e}", exc_info=True)
-        return pd.Series()
-
-
-def regime_from_smooth_weight(weight_series, quantiles=(0.33, 0.66, 0.90)):
-    """Map smooth transition weights to regimes using quantile-based thresholds."""
-    try:
-        q1, q2, q3 = weight_series.quantile(quantiles)
-
-        def map_regime(w):
-            if w < q1:
-                return 'Green'
-            elif w < q2:
-                return 'Yellow'
-            elif w < q3:
-                return 'Amber'
-            return 'Red'
-
-        return weight_series.apply(map_regime)
-    except Exception as e:
-        logging.error(f"Error mapping regime from smooth weight: {e}", exc_info=True)
-        return pd.Series()
-
-
-def get_current_regime(df):
-    """Return the most recent regime label from rule-based regime column."""
-    if 'Regime' in df.columns:
-        return df['Regime'].iloc[-1]
-    else:
-        raise ValueError("Regime column not found in dataframe.")
-
 def run_hmm(df, n_states=4, columns=None):
     """
     Fit an HMM on the specified columns and return most recent state and all states.
@@ -594,24 +377,6 @@ def average_time_in_regime(regime_series):
     # Average streak for each regime
     avg = {k: sum(v)/len(v) for k, v in result.items()}
     return pd.Series(avg).sort_index()
-
-
-
-
-
-
-
-
-
-
-
-
-
-########################################################
-########################################################
-########################################################
-
-
 
 
 def build_dynamic_group_map(df, window_pref=("260","252","250","126","125","63")):
@@ -853,38 +618,25 @@ def orient_fsi_and_omega(
 
 
 
-
-
-
-########################################################
-########################################################
-########################################################
-
-
-
-
-
-
-
-
 def classify_regime_global_fsi(
     fsi_series: pd.Series,
-    quantiles=(0.30, 0.75, 0.95) #(0.40, 0.80, 0.96)
+    quantiles=(0.30, 0.75, 0.95),
+    q_values=None
 ) -> pd.Series:
     """
     Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
     This is the anchor regime: time-invariant thresholds.
 
-    Green:  FSI <= q[0]
-    Yellow: q[0] < FSI <= q[1]
-    Amber:  q[1] < FSI <= q[2]
-    Red:    FSI > q[2]
+    If q_values is provided, it should be (q1, q2, q3) and we do NOT recompute quantiles.
     """
     fsi = fsi_series.dropna()
     if fsi.empty:
         return pd.Series(index=fsi_series.index, dtype="object")
 
-    q1, q2, q3 = fsi.quantile(quantiles)
+    if q_values is not None:
+        q1, q2, q3 = q_values
+    else:
+        q1, q2, q3 = fsi.quantile(quantiles)
 
     regimes = pd.Series(index=fsi_series.index, dtype="object")
 
@@ -893,29 +645,57 @@ def classify_regime_global_fsi(
     regimes[(fsi > q2) & (fsi <= q3)] = "Amber"
     regimes[fsi > q3] = "Red"
 
-    # Fill any leading/trailing NaNs conservatively as Yellow
     regimes = regimes.reindex(fsi_series.index).ffill().bfill().fillna("Yellow")
     return regimes
 
 
-# def fsi_vol_spike_flags(
+
+
+# def classify_regime_global_fsi(
 #     fsi_series: pd.Series,
-#     lambda_=0.97,
-#     change_quantile=0.95,
-#     level_quantile=0.60,
-#     min_history: int = 60
+#     quantiles=(0.30, 0.75, 0.95) #(0.40, 0.80, 0.96)
 # ) -> pd.Series:
 #     """
-#     FSI-only volatility spike detector:
-#     - Compute EWMA volatility of FSI.
-#     - Flag spike when:
-#         * change in vol > change_quantile of its own history, AND
-#         * vol level > level_quantile of its own distribution.
+#     Base 4-color regime from *global* FSI quantiles (no volatility or rolling window).
+#     This is the anchor regime: time-invariant thresholds.
+
+#     Green:  FSI <= q[0]
+#     Yellow: q[0] < FSI <= q[1]
+#     Amber:  q[1] < FSI <= q[2]
+#     Red:    FSI > q[2]
 #     """
-#     vol = ewma_volatility(fsi_series, lambda_=lambda_)  # already FSI-only
+#     fsi = fsi_series.dropna()
+#     if fsi.empty:
+#         return pd.Series(index=fsi_series.index, dtype="object")
+
+#     q1, q2, q3 = fsi.quantile(quantiles)
+
+#     regimes = pd.Series(index=fsi_series.index, dtype="object")
+
+#     regimes[fsi <= q1] = "Green"
+#     regimes[(fsi > q1) & (fsi <= q2)] = "Yellow"
+#     regimes[(fsi > q2) & (fsi <= q3)] = "Amber"
+#     regimes[fsi > q3] = "Red"
+
+#     # Fill any leading/trailing NaNs conservatively as Yellow
+#     regimes = regimes.reindex(fsi_series.index).ffill().bfill().fillna("Yellow")
+#     return regimes
+
+
+# def fsi_vol_spike_flags(
+#     fsi_series: pd.Series,
+#     lambda_=0.90,            # was 0.97 -> reacts a bit faster
+#     change_quantile=0.88,    # was 0.95 -> easier to flag a jump
+#     level_quantile=0.45,     # was 0.60 -> slightly lower vol level needed
+#     min_history: int = 60,
+#     dilate_window: int = 2,  # new: widen spikes by ±1 day
+# ) -> pd.Series:
+#     """
+#     FSI-only volatility spike detector (slightly more sensitive).
+#     """
+#     vol = ewma_volatility(fsi_series, lambda_=lambda_)
 #     dvol = vol.diff()
 
-#     # Restrict to build thresholds only where we have enough history
 #     valid = dvol.dropna()
 #     if len(valid) < min_history:
 #         return pd.Series(False, index=fsi_series.index)
@@ -923,35 +703,55 @@ def classify_regime_global_fsi(
 #     change_thr = valid.quantile(change_quantile)
 #     level_thr  = vol.dropna().quantile(level_quantile)
 
-#     flags = (dvol > change_thr) & (vol > level_thr)
-#     return flags.reindex(fsi_series.index).fillna(False)
+#     raw_flags = (dvol > change_thr) & (vol > level_thr)
+#     raw_flags = raw_flags.reindex(fsi_series.index).fillna(False)
+
+#     # Simple morphological dilation: expand spikes by ± dilate_window days
+#     if dilate_window > 0:
+#         expanded = (
+#             raw_flags.rolling(2 * dilate_window + 1, center=True, min_periods=1)
+#                      .max()
+#                      .astype(bool)
+#         )
+#         return expanded
+
+#     return raw_flags
+
 
 
 def fsi_vol_spike_flags(
     fsi_series: pd.Series,
-    lambda_=0.90,            # was 0.97 -> reacts a bit faster
-    change_quantile=0.88,    # was 0.95 -> easier to flag a jump
-    level_quantile=0.45,     # was 0.60 -> slightly lower vol level needed
+    lambda_=0.90,
+    change_quantile=0.90,
+    level_quantile=0.50,
     min_history: int = 60,
-    dilate_window: int = 2,  # new: widen spikes by ±1 day
+    dilate_window: int = 2,
+    calibration_mask: pd.Series | None = None,
 ) -> pd.Series:
     """
     FSI-only volatility spike detector (slightly more sensitive).
+    Thresholds can be computed on a fixed calibration window if calibration_mask is given.
     """
     vol = ewma_volatility(fsi_series, lambda_=lambda_)
     dvol = vol.diff()
 
-    valid = dvol.dropna()
+    if calibration_mask is not None:
+        calib_mask = calibration_mask.reindex(fsi_series.index).fillna(False)
+        valid = dvol[calib_mask].dropna()
+        vol_for_level = vol[calib_mask].dropna()
+    else:
+        valid = dvol.dropna()
+        vol_for_level = vol.dropna()
+
     if len(valid) < min_history:
         return pd.Series(False, index=fsi_series.index)
 
     change_thr = valid.quantile(change_quantile)
-    level_thr  = vol.dropna().quantile(level_quantile)
+    level_thr  = vol_for_level.quantile(level_quantile)
 
     raw_flags = (dvol > change_thr) & (vol > level_thr)
     raw_flags = raw_flags.reindex(fsi_series.index).fillna(False)
 
-    # Simple morphological dilation: expand spikes by ± dilate_window days
     if dilate_window > 0:
         expanded = (
             raw_flags.rolling(2 * dilate_window + 1, center=True, min_periods=1)
@@ -963,24 +763,6 @@ def fsi_vol_spike_flags(
     return raw_flags
 
 
-# REGIME_ORDER = ["Green", "Yellow", "Amber", "Red"]
-# REGIME_TO_INT = {r: i for i, r in enumerate(REGIME_ORDER)}
-# INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
-
-
-# def _upgrade_one_notch(regime_series: pd.Series, spike_flags: pd.Series,
-#                        fsi_series: pd.Series, q1: float) -> pd.Series:
-#     """
-#     Upgrade regime by one notch on spike days, but only when FSI > q1
-#     (i.e., don't create Yellow in very low FSI environment).
-#     """
-#     out = regime_series.copy()
-#     base_int = regime_series.map(REGIME_TO_INT)
-
-#     mask = spike_flags & (fsi_series > q1)
-#     base_int_spike = base_int.where(~mask, np.minimum(base_int + 1, len(REGIME_ORDER) - 1))
-
-#     return base_int_spike.map(INT_TO_REGIME)
 
 
 REGIME_ORDER = ["Green", "Yellow", "Amber", "Red"]
@@ -988,55 +770,6 @@ REGIME_TO_INT = {r: i for i, r in enumerate(REGIME_ORDER)}
 INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
 
 
-# def _upgrade_with_direction(
-#     regime_series: pd.Series,
-#     spike_flags: pd.Series,
-#     fsi_series: pd.Series,
-#     q1: float,
-#     q2: float,
-#     super_spike_quantile: float = 0.97,
-# ) -> pd.Series:
-#     """
-#     Directional upgrade logic:
-
-#     - Only *upward* FSI spikes can upgrade.
-#     - Normal upward spikes (FSI > q1) → +1 notch.
-#     - Very large upward spikes with already-elevated FSI (FSI > q2
-#       and dFSI above super_spike_quantile) → force Red.
-#     """
-#     base_int = regime_series.map(REGIME_TO_INT)
-#     out_int = base_int.copy()
-
-#     # daily FSI change (level, not %; you can swap to pct_change if preferred)
-#     dfsi = fsi_series.diff().reindex(regime_series.index)
-
-#     # only upward moves are candidates
-#     up_moves = dfsi > 0
-
-#     # basic upward spike mask: vol spike & move up & FSI above lower threshold
-#     up_spike_mask = spike_flags & up_moves & (fsi_series > q1)
-
-#     # super-spikes: among upward moves, very large change and already high FSI
-#     pos_changes = dfsi[dfsi > 0].dropna()
-#     if not pos_changes.empty:
-#         super_thr = pos_changes.quantile(super_spike_quantile)
-#         super_mask = up_spike_mask & (dfsi > super_thr) & (fsi_series > q2)
-#     else:
-#         super_mask = pd.Series(False, index=regime_series.index)
-
-#     # 1) normal upward spikes → +1 notch (but not where super_mask is True)
-#     normal_mask = up_spike_mask & ~super_mask
-#     out_int[normal_mask] = np.minimum(out_int[normal_mask] + 1,
-#                                       len(REGIME_ORDER) - 1)
-
-#     # 2) super-spikes → force Red
-#     out_int[super_mask] = REGIME_TO_INT["Red"]
-
-#     return out_int.map(INT_TO_REGIME)
-
-
-
-
 
 
 
@@ -1046,53 +779,56 @@ INT_TO_REGIME = {i: r for i, r in enumerate(REGIME_ORDER)}
 #     fsi_series: pd.Series,
 #     q1: float,
 #     q2: float,
-#     super_spike_quantile: float = 0.90,   # was 0.97 → easier to qualify
+#     super_spike_quantile: float = 0.90,
+#     medium_quantile: float = 0.85,
 # ) -> pd.Series:
-#     """
-#     Directional upgrade logic:
-
-#     - Only *upward* FSI moves can upgrade.
-#     - Normal upward spikes (FSI > q1) → +1 notch.
-#     - Very large upward spikes (dFSI in top X% and FSI > q1) → force Red,
-#       even if the base regime is only Yellow.
-#     """
 #     base_int = regime_series.map(REGIME_TO_INT)
-#     out_int = base_int.copy()
+#     out_int  = base_int.copy()
 
-#     # daily FSI change (level)
 #     dfsi = fsi_series.diff().reindex(regime_series.index)
 
 #     # only upward moves are candidates
 #     up_moves = dfsi > 0
 
-#     # vol spike & move up & FSI above lower threshold
-#     up_spike_mask = spike_flags & up_moves & (fsi_series > q1)
+#     # spike in FSI, regardless of level (for medium / super)
+#     raw_spike = spike_flags & up_moves
 
-#     # super-spikes: very large *upward* changes
 #     pos_changes = dfsi[dfsi > 0].dropna()
 #     if not pos_changes.empty:
-#         super_thr  = pos_changes.quantile(super_spike_quantile)   # e.g. 0.93
-#         medium_thr = pos_changes.quantile(0.85)                   # new
-#         super_mask = up_spike_mask & (dfsi > super_thr)
-#         # “medium” spikes: between 85th and super_spike_quantile
-#         medium_mask = up_spike_mask & (dfsi > medium_thr) & ~super_mask
+#         super_thr  = pos_changes.quantile(super_spike_quantile)
+#         medium_thr = pos_changes.quantile(medium_quantile)
+
+#         # very large jump → super
+#         super_mask  = raw_spike & (dfsi > super_thr)
+#         # medium jump → medium
+#         medium_mask = raw_spike & (dfsi > medium_thr) & ~super_mask
 #     else:
-#         super_mask = pd.Series(False, index=regime_series.index)
+#         super_mask  = pd.Series(False, index=regime_series.index)
 #         medium_mask = super_mask.copy()
 
-#     normal_mask = up_spike_mask & ~super_mask & ~medium_mask
+#     # smaller spikes still need FSI above q1 to avoid noise
+#     normal_mask = (
+#         raw_spike
+#         & ~super_mask
+#         & ~medium_mask
+#         & (fsi_series > q1)
+#     )
+
 #     max_int = len(REGIME_ORDER) - 1
 
-#     # +2 for medium spikes
-#     out_int[medium_mask] = np.minimum(base_int[medium_mask] + 2, max_int)
-#     # +1 for normal spikes
+#     # medium spikes: at least Amber (Green→Amber, Yellow→Red)
+#     out_int[medium_mask] = np.maximum(
+#         REGIME_TO_INT["Amber"],
+#         np.minimum(base_int[medium_mask] + 2, max_int)
+#     )
+
+#     # normal spikes: +1 notch
 #     out_int[normal_mask] = np.minimum(base_int[normal_mask] + 1, max_int)
-#     # super spikes → Red
+
+#     # super spikes: outright Red
 #     out_int[super_mask] = REGIME_TO_INT["Red"]
 
 #     return out_int.map(INT_TO_REGIME)
-
-
 
 
 
@@ -1105,32 +841,33 @@ def _upgrade_with_direction(
     q2: float,
     super_spike_quantile: float = 0.90,
     medium_quantile: float = 0.85,
+    calibration_mask: pd.Series | None = None,
 ) -> pd.Series:
     base_int = regime_series.map(REGIME_TO_INT)
     out_int  = base_int.copy()
 
     dfsi = fsi_series.diff().reindex(regime_series.index)
 
-    # only upward moves are candidates
     up_moves = dfsi > 0
-
-    # spike in FSI, regardless of level (for medium / super)
     raw_spike = spike_flags & up_moves
 
-    pos_changes = dfsi[dfsi > 0].dropna()
-    if not pos_changes.empty:
-        super_thr  = pos_changes.quantile(super_spike_quantile)
-        medium_thr = pos_changes.quantile(medium_quantile)
+    # --- calibration on positive changes
+    if calibration_mask is not None:
+        calib_mask = calibration_mask.reindex(regime_series.index).fillna(False)
+        pos_changes_calib = dfsi[calib_mask & (dfsi > 0)].dropna()
+    else:
+        pos_changes_calib = dfsi[dfsi > 0].dropna()
 
-        # very large jump → super
+    if not pos_changes_calib.empty:
+        super_thr  = pos_changes_calib.quantile(super_spike_quantile)
+        medium_thr = pos_changes_calib.quantile(medium_quantile)
+
         super_mask  = raw_spike & (dfsi > super_thr)
-        # medium jump → medium
         medium_mask = raw_spike & (dfsi > medium_thr) & ~super_mask
     else:
         super_mask  = pd.Series(False, index=regime_series.index)
         medium_mask = super_mask.copy()
 
-    # smaller spikes still need FSI above q1 to avoid noise
     normal_mask = (
         raw_spike
         & ~super_mask
@@ -1140,16 +877,13 @@ def _upgrade_with_direction(
 
     max_int = len(REGIME_ORDER) - 1
 
-    # medium spikes: at least Amber (Green→Amber, Yellow→Red)
     out_int[medium_mask] = np.maximum(
         REGIME_TO_INT["Amber"],
         np.minimum(base_int[medium_mask] + 2, max_int)
     )
 
-    # normal spikes: +1 notch
     out_int[normal_mask] = np.minimum(base_int[normal_mask] + 1, max_int)
 
-    # super spikes: outright Red
     out_int[super_mask] = REGIME_TO_INT["Red"]
 
     return out_int.map(INT_TO_REGIME)
@@ -1198,54 +932,6 @@ def _apply_cooling_amber_to_yellow(
     return reg_int.map(INT_TO_REGIME)
 
 
-
-
-
-
-# def classify_regime_fsi_improved(
-#     fsi_series: pd.Series,
-#     quantiles=(0.38, 0.77, 0.95), # (0.40, 0.80, 0.96)
-#     lambda_=0.95,
-#     change_quantile=0.90,
-#     level_quantile=0.50,
-#     min_history_spike: int = 60,
-#     min_run_length: int = 3,
-# ) -> pd.Series:
-#     """
-#     Canonical FSI-only 4-color regime classifier.
-
-#     Steps:
-#       1) Base regime from *global* FSI quantiles.
-#       2) Detect FSI-only volatility spikes (EWMA vol level + change).
-#       3) On spike days with FSI > q1, upgrade regime by ONE notch (Green→Yellow→Amber→Red).
-#       4) Smooth regimes: any run shorter than min_run_length days is merged into the previous regime.
-#     """
-#     fsi = fsi_series.copy()
-
-#     # 1. Base global regime & thresholds
-#     fsi_nonnull = fsi.dropna()
-#     if fsi_nonnull.empty:
-#         return pd.Series(index=fsi.index, dtype="object")
-#     q1, q2, q3 = fsi_nonnull.quantile(quantiles)
-
-#     base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
-
-#     # 2. Spike flags FSI-only
-#     spikes = fsi_vol_spike_flags(
-#         fsi,
-#         lambda_=lambda_,
-#         change_quantile=change_quantile,
-#         level_quantile=level_quantile,
-#         min_history=min_history_spike,
-#     )
-
-#     # 3. Upgrade by one notch where spike & FSI > q1
-#     upgraded_regime = _upgrade_one_notch(base_regime, spikes, fsi, q1=q1)
-
-#     # 4. Smooth/hysteresis
-#     smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
-
-#     return smoothed_regime
 
 
 
@@ -1362,121 +1048,9 @@ def _cool_from_local_peak(
 
 
 
-
 # def classify_regime_fsi_improved(
 #     fsi_series: pd.Series,
-#     quantiles=(0.38, 0.77, 0.95),
-#     lambda_=0.95,
-#     change_quantile=0.90,
-#     level_quantile=0.50,
-#     min_history_spike: int = 60,
-#     min_run_length: int = 2,      # <- allow 2-day Red bursts to survive
-#     super_spike_quantile: float = 0.97,
-# ) -> pd.Series:
-#     """
-#     Canonical FSI-only 4-color regime classifier (directional):
-
-#       1) Base regime from *global* FSI quantiles.
-#       2) Detect FSI-only volatility spikes.
-#       3) Consider only UPWARD spikes:
-#          - normal up-spike → +1 notch if FSI > q1
-#          - very large up-spike with FSI > q2 → force Red
-#       4) Smooth: runs shorter than min_run_length are merged into previous regime.
-#     """
-#     fsi = fsi_series.copy()
-#     fsi_nonnull = fsi.dropna()
-#     if fsi_nonnull.empty:
-#         return pd.Series(index=fsi.index, dtype="object")
-
-#     q1, q2, q3 = fsi_nonnull.quantile(quantiles)
-
-#     # 1. Base regime by level
-#     base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
-
-#     # 2. Volatility spikes (symmetric, no direction)
-#     spikes = fsi_vol_spike_flags(
-#         fsi,
-#         lambda_=lambda_,
-#         change_quantile=change_quantile,
-#         level_quantile=level_quantile,
-#         min_history=min_history_spike,
-#     )
-
-#     # 3. Directional, tiered upgrades
-#     upgraded_regime = _upgrade_with_direction(
-#         base_regime,
-#         spike_flags=spikes,
-#         fsi_series=fsi,
-#         q1=q1,
-#         q2=q2,
-#         super_spike_quantile=super_spike_quantile,
-#     )
-
-#     # 4. Smoothing / hysteresis
-#     smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
-#     return smoothed_regime
-
-
-
-
-
-# def classify_regime_fsi_improved(
-#     fsi_series: pd.Series,
-#     quantiles=(0.38, 0.75, 0.95),
-#     lambda_=0.90,
-#     change_quantile=0.90,
-#     level_quantile=0.50,
-#     min_history_spike: int = 60,
-#     min_run_length: int = 2,          # allow 2-day Red bursts
-#     super_spike_quantile: float = 0.90,
-# ) -> pd.Series:
-#     fsi = fsi_series.copy()
-#     fsi_nonnull = fsi.dropna()
-#     if fsi_nonnull.empty:
-#         return pd.Series(index=fsi.index, dtype="object")
-
-#     q1, q2, q3 = fsi_nonnull.quantile(quantiles)
-
-#     # 1. Base regime by global quantiles
-#     base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
-
-#     # 2. Symmetric volatility spikes (EWMA)
-#     spikes = fsi_vol_spike_flags(
-#         fsi,
-#         lambda_=lambda_,
-#         change_quantile=change_quantile,
-#         level_quantile=level_quantile,
-#         min_history=min_history_spike,
-#     )
-
-#     # 3. Directional, tiered upgrades
-#     upgraded_regime = _upgrade_with_direction(
-#         base_regime,
-#         spike_flags=spikes,
-#         fsi_series=fsi,
-#         q1=q1,
-#         q2=q2,
-#         super_spike_quantile=super_spike_quantile,
-#     )
-
-#     # 4. Smoothing / hysteresis
-#     smoothed_regime = smooth_regime_series(upgraded_regime, min_run=min_run_length)
-#     return smoothed_regime
-
-
-
-
-
-
-
-
-
-
-##########################################
-
-# def classify_regime_fsi_improved(
-#     fsi_series: pd.Series,
-#     quantiles=(0.38, 0.75, 0.95),
+#     quantiles=(0.30, 0.75, 0.95),
 #     lambda_=0.90,
 #     change_quantile=0.90,
 #     level_quantile=0.50,
@@ -1491,7 +1065,7 @@ def _cool_from_local_peak(
 
 #     q1, q2, q3 = fsi_nonnull.quantile(quantiles)
 
-#     # 1. Base regime by global quantiles
+#     # 1. Base regime by global quantiles (anchor)
 #     base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
 
 #     # 2. Symmetric volatility spikes (EWMA)
@@ -1500,7 +1074,7 @@ def _cool_from_local_peak(
 #         lambda_=lambda_,
 #         change_quantile=change_quantile,
 #         level_quantile=level_quantile,
-#         min_history=min_history_spike,
+#         min_history=min_history_spike,   # <-- fixed name
 #     )
 
 #     # 3. Directional, tiered upgrades (only up)
@@ -1513,24 +1087,27 @@ def _cool_from_local_peak(
 #         super_spike_quantile=super_spike_quantile,
 #     )
 
-#     # 3b. Cooling on the way down: Amber → Yellow after sustained decline
-#     cooled_regime = _apply_cooling_amber_to_yellow(
+#     # 3b. Relax back toward base when FSI is trending down
+#     relaxed_regime = _revert_toward_base_on_decline(
 #         upgraded_regime,
+#         base_regime=base_regime,
 #         fsi_series=fsi,
-#         spike_flags=spikes,
-#         cool_run=5,         # try 4–6 and see what looks best
-#         cool_quantile=0.70  # 0.65–0.75 is a good range to play with
+#         run_down=3
 #     )
 
-#     # 4. Smoothing / hysteresis
+#     # 3c. Extra cooling from local peak (Red→Amber, Amber→Yellow)
+#     cooled_regime = _cool_from_local_peak(
+#         relaxed_regime,
+#         fsi_series=fsi,
+#         lookback=252,
+#         drop_amber=0.25,
+#         drop_red=0.20,
+#         min_down_days=3
+#     )
+
+#     # 4. Smoothing / hysteresis (to kill 1-day flips)
 #     smoothed_regime = smooth_regime_series(cooled_regime, min_run=min_run_length)
 #     return smoothed_regime
-
-##########################
-
-
-
-
 
 
 
@@ -1543,27 +1120,41 @@ def classify_regime_fsi_improved(
     min_history_spike: int = 60,
     min_run_length: int = 2,
     super_spike_quantile: float = 0.90,
+    calibration_mask: pd.Series | None = None,
 ) -> pd.Series:
     fsi = fsi_series.copy()
     fsi_nonnull = fsi.dropna()
     if fsi_nonnull.empty:
         return pd.Series(index=fsi.index, dtype="object")
 
-    q1, q2, q3 = fsi_nonnull.quantile(quantiles)
+    # --- pick calibration FSI for thresholds ---
+    if calibration_mask is not None:
+        calib_mask = calibration_mask.reindex(fsi.index).fillna(False)
+        calib_fsi = fsi[calib_mask].dropna()
+        if calib_fsi.empty:
+            calib_fsi = fsi_nonnull
+    else:
+        calib_mask = None
+        calib_fsi = fsi_nonnull
 
-    # 1. Base regime by global quantiles (anchor)
-    base_regime = classify_regime_global_fsi(fsi, quantiles=quantiles)
+    q1, q2, q3 = calib_fsi.quantile(quantiles)
 
-    # 2. Symmetric volatility spikes (EWMA)
+    # 1. Base regime from CALIBRATION quantiles (fixed thresholds)
+    base_regime = classify_regime_global_fsi(
+        fsi, quantiles=quantiles, q_values=(q1, q2, q3)
+    )
+
+    # 2. Volatility spikes with CALIBRATION thresholds
     spikes = fsi_vol_spike_flags(
         fsi,
         lambda_=lambda_,
         change_quantile=change_quantile,
         level_quantile=level_quantile,
-        min_history=min_history_spike,   # <-- fixed name
+        min_history=min_history_spike,
+        calibration_mask=calib_mask,
     )
 
-    # 3. Directional, tiered upgrades (only up)
+    # 3. Directional upgrades using CALIBRATION super/medium thresholds
     upgraded_regime = _upgrade_with_direction(
         base_regime,
         spike_flags=spikes,
@@ -1571,9 +1162,10 @@ def classify_regime_fsi_improved(
         q1=q1,
         q2=q2,
         super_spike_quantile=super_spike_quantile,
+        calibration_mask=calib_mask,
     )
 
-    # 3b. Relax back toward base when FSI is trending down
+    # 3b. Relax back toward base on declines
     relaxed_regime = _revert_toward_base_on_decline(
         upgraded_regime,
         base_regime=base_regime,
@@ -1581,7 +1173,7 @@ def classify_regime_fsi_improved(
         run_down=3
     )
 
-    # 3c. Extra cooling from local peak (Red→Amber, Amber→Yellow)
+    # 3c. Cooling from local peak (no extra quantiles here, so it remains stable)
     cooled_regime = _cool_from_local_peak(
         relaxed_regime,
         fsi_series=fsi,
@@ -1591,8 +1183,6 @@ def classify_regime_fsi_improved(
         min_down_days=3
     )
 
-    # 4. Smoothing / hysteresis (to kill 1-day flips)
+    # 4. Smoothing / hysteresis
     smoothed_regime = smooth_regime_series(cooled_regime, min_run=min_run_length)
     return smoothed_regime
-
-

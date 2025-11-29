@@ -7,14 +7,11 @@ import numpy as np
 import chart_studio
 import chart_studio.plotly as py
 import logging
-from utils import smooth_transition_regime, regime_from_smooth_weight, classify_adaptive_regime, classify_adaptive_regime_hybrid_fallback, classify_risk_regime_hybrid
 import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde, skew, kurtosis
 from numpy import trapz
  
-# chart_studio.tools.set_credentials_file(username='Tuler', api_key='EOdkt6iCFZgZvJtTdFc6')
-
 
 # --- Shared axis styles (taken from PnL chart) ---
 AXIS_TITLE_FONT = dict(family="Arial Black", size=16, color="#163A7B")
@@ -264,28 +261,6 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
         for d in year_starts:
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
-
-        # fig.update_layout(
-        #     template="plotly_white",
-        #     showlegend=True,
-        #     font=dict(family="Arial", size=13),  # body text
-        #     xaxis=dict(
-        #         type='date',
-        #         showgrid=False,
-        #         gridwidth=1.2,
-        #         gridcolor='black',
-        #         rangeslider=dict(visible=False),
-        #     ),
-        #     yaxis=dict(
-        #         title=dict(text="<b>Contribution to FSI</b>", font=AXIS_TITLE_FONT),
-        #         tickfont=AXIS_TICK_FONT,
-        #         showgrid=False,
-        #         gridwidth=1,
-        #         gridcolor='lightgray'
-        #     ),
-        # )
-
-
         fig.update_layout(
             template="plotly_white",
             showlegend=True,
@@ -332,48 +307,6 @@ def plot_group_contributions_with_regime(contribs_by_group, regimes=None, regime
         logging.error(f"Error plotting variable-level contributions: {e}", exc_info=True)
         return None
 
-
-
-
-
-    #     fig.update_layout(
-    #         template="plotly_white",
-    #         showlegend=True,
-    #         font=dict(family="Arial", size=13),
-    #         xaxis=dict(
-    #             title="Date",
-    #             rangeslider=dict(visible=False),
-    #             type='date',
-    #             showgrid=False,
-    #             gridwidth=1.2,
-    #             gridcolor='black',
-    #             tickformat='%Y'
-    #         ),
-    #         yaxis=dict(
-    #             title="Contribution to FSI",
-    #             showgrid=False,
-    #             gridwidth=1,
-    #             gridcolor='lightgray'
-    #         ),
-    #     )
-
-    #     y_min = float(np.nanmin(fsi))
-    #     y_max = float(np.nanmax(fsi))
-    #     fix_axis_minus(fig, y_min, y_max)
-
-    #     fig.update_yaxes(
-    #         tickformat=".2f",
-    #         separatethousands=False,
-    #         exponentformat="none",
-    #         showexponent="none",
-    #         tickfont=dict(family="Arial", size=13)
-    #     )
-
-    #     return fig
-
-    # except Exception as e:
-    #     logging.error(f"Error plotting variable-level contributions: {e}", exc_info=True)
-    #     return None
 
 
 def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=None):
@@ -430,25 +363,6 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
             fig.add_vline(x=d, line_width=1.2, line_color="black", opacity=0.5)
 
 
-        # fig.update_layout(
-        #     template="plotly_white",
-        #     showlegend=True,
-        #     xaxis=dict(
-        #         type='date',
-        #         showgrid=False,
-        #         gridwidth=1.2,
-        #         gridcolor='black',
-        #         rangeslider=dict(visible=False),
-        #     ),
-        #     yaxis=dict(
-        #         title=dict(text="<b>Contribution to FSI</b>", font=AXIS_TITLE_FONT),
-        #         tickfont=AXIS_TICK_FONT,
-        #         showgrid=False,
-        #         gridwidth=1,
-        #         gridcolor='lightgray'
-        #     ),
-        # )
-
 
         fig.update_layout(
             template="plotly_white",
@@ -496,46 +410,6 @@ def plot_grouped_contributions(contribs_by_group, regimes=None, regime_filter=No
         logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
         return None
 
-
-
-
-    #     fig.update_layout(
-    #         template="plotly_white",
-    #         showlegend=True,
-    #         xaxis=dict(
-    #             title="Date",
-    #             rangeslider=dict(visible=False),
-    #             type='date',
-    #             showgrid=False,
-    #             gridwidth=1.2,
-    #             gridcolor='black',
-    #             tickformat='%Y'
-    #         ),
-    #         yaxis=dict(
-    #             title="Contribution to FSI",
-    #             showgrid=False,
-    #             gridwidth=1,
-    #             gridcolor='lightgray'
-    #         ),
-    #     )
-
-    #     y_min = float(np.nanmin(fsi))
-    #     y_max = float(np.nanmax(fsi))
-    #     fix_axis_minus(fig, y_min, y_max)
-
-    #     fig.update_yaxes(
-    #         tickformat=".2f",
-    #         separatethousands=False,
-    #         exponentformat="none",
-    #         showexponent="none",
-    #         tickfont=dict(family="Arial", size=13)
-    #     )
-
-    #     return fig
-
-    # except Exception as e:
-    #     logging.error(f"Error plotting grouped contributions: {e}", exc_info=True)
-    #     return None
 
 
 def plot_hhi_bar(ranking_shares: pd.Series, top_n: int = 15, title_suffix: str = ""):
@@ -638,10 +512,6 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             marker=dict(size=5, color='Darkblue'),
             name='PnL'
         ))
-
-        # # Regime ribbons (match FSI chart)
-        # fsi_daily, regimes_daily = _prepare_ribbons(fsi, regimes)
-        # add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
 
         # Regime ribbons (restricted to PnL window)
         fsi_daily, regimes_daily = _prepare_ribbons(fsi_window, regimes_window)

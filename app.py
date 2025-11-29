@@ -18,14 +18,14 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
-    plot_distribution_plotly, plot_hhi_bar, make_cumret_figure
+    plot_distribution_plotly, make_cumret_figure
 )
 from data_fetching import get_benchmark_returns
 from utils import (
     aggregate_contributions_by_group, classify_regime_fsi_improved,
-    get_current_regime, run_hmm, predict_regime_probability, compute_transition_matrix, build_dynamic_group_map, orient_fsi_and_omega,
-    classify_risk_regime_hybrid, average_time_in_regime, classify_adaptive_regime_hybrid_fallback,
-    compute_hhi_ranking
+    run_hmm, predict_regime_probability, compute_transition_matrix, 
+    build_dynamic_group_map, orient_fsi_and_omega, 
+    average_time_in_regime, compute_hhi_ranking
 )
 
 # --- Consistent Regime Colors ---
@@ -344,35 +344,6 @@ app.layout = html.Div([
         ]
     ),
 
-                #     # --- FSI Event Annotations Controls ---
-                # html.Div([
-                #     html.H3("Add Events on FSI Charts", style={"marginTop": "10px"}),
-                #     html.Div([
-                #         dcc.DatePickerSingle(
-                #             id='fsi-event-date',
-                #             display_format="YYYY-MM-DD",
-                #             placeholder="Event date",
-                #             style={"marginRight": "10px"}
-                #         ),
-                #         dcc.Input(
-                #             id='fsi-event-label',
-                #             type='text',
-                #             placeholder='Event label (e.g. "SVB failure")',
-                #             style={"marginRight": "10px", "width": "260px"}
-                #         ),
-                #         html.Button(
-                #             "Add FSI Event",
-                #             id='add-fsi-event-btn',
-                #             n_clicks=0,
-                #             className="download-btn"
-                #         )
-                #     ], style={"display": "flex", "flexDirection": "row", "alignItems": "center"}),
-                #     html.Div(
-                #         id='fsi-events-list',
-                #         style={"marginTop": "6px", "fontSize": "0.9em", "color": "#555"}
-                #     )
-                # ], style={"marginBottom": "20px"}),
-
             # --- Improved PnL Chart Section ---
             html.Div([
                 html.H2([
@@ -606,17 +577,6 @@ app.layout = html.Div([
 })
 
 
-
-# @app.callback(
-#     Output('fsi-events-store', 'data'),
-#     Output('fsi-events-list', 'children'),
-#     Input('add-fsi-event-btn', 'n_clicks'),
-#     State('fsi-event-date', 'date'),
-#     State('fsi-event-label', 'value'),
-#     State('fsi-events-store', 'data'),
-#     prevent_initial_call=True
-# )
-
 def add_fsi_event(n_clicks, date_str, label, events):
     if not date_str or not label:
         raise dash.exceptions.PreventUpdate
@@ -634,16 +594,26 @@ def add_fsi_event(n_clicks, date_str, label, events):
 
 
 # --- 1. RUN/REFRESH BUTTON: Pipeline Callback with Caching and Button Disable ---
+# @app.callback(
+#     [Output('fsi-store', 'data'), 
+#      Output('run-message', 'children'), 
+#      Output('run-btn', 'disabled'), 
+#      Output('timestamp-label', 'children')],
+#     Input('run-btn', 'n_clicks'),
+#     prevent_initial_call=True
+# )
+
 @app.callback(
     [Output('fsi-store', 'data'), 
      Output('run-message', 'children'), 
      Output('run-btn', 'disabled'), 
      Output('timestamp-label', 'children')],
     Input('run-btn', 'n_clicks'),
+    State('regime-calib-end', 'date'),
     prevent_initial_call=True
 )
 
-def run_full_pipeline(n_clicks):
+def run_full_pipeline(n_clicks, regime_calib_end):
     import time
 
     cache_key = "fsi_analysis_latest_hybrid_v2"
@@ -721,6 +691,18 @@ def run_full_pipeline(n_clicks):
             logging.warning(f"[ATTR] Group attribution mismatch max={err:.2e}")
     except Exception:
         pass
+
+    # --- Regime classification on oriented FSI ---
+    fsi = variable_contribs['FSI']
+
+    # Calibration mask: from first FSI date to selected calibration end date
+    if regime_calib_end is not None:
+        calib_end = pd.to_datetime(regime_calib_end)
+        calib_mask = fsi.index <= calib_end
+    else:
+        calib_mask = None  # fallback: full-sample calibration
+
+    regimes_full = classify_regime_fsi_improved(fsi, calibration_mask=calib_mask)
 
     # --- Regime classification (fixed, not recomputed on UI tweaks) ---
     regimes_full = classify_regime_fsi_improved(variable_contribs['FSI'])
@@ -883,15 +865,6 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
             fig.update_layout(margin=dict(l=10, r=10, t=45, b=14),
                               paper_bgcolor="#f7f8fa", height=210)
             return fig
-
-        # fig_prob_logit = make_prob_gauge(
-        #     data["prob_red_logit"],
-        #     f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
-        # )
-        # fig_prob_xgb = make_prob_gauge(
-        #     data["prob_red_xgb"],
-        #     f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
-        # )
 
         fig_prob_logit = make_prob_gauge(
             data["prob_red_logit"],
@@ -1059,15 +1032,6 @@ def update_all_from_store(data, start_date, end_date, ytick_opts, ribbon_filter,
         fig.update_layout(margin=dict(l=10, r=10, t=45, b=14),
                           paper_bgcolor="#f7f8fa", height=210)
         return fig
-
-    # fig_prob_logit = make_prob_gauge(
-    #     data["prob_red_logit"],
-    #     f"Logit P(Red) (AUC: {data['auc_logit']:.2f})"
-    # )
-    # fig_prob_xgb = make_prob_gauge(
-    #     data["prob_red_xgb"],
-    #     f"XGBoost P(Red) (AUC: {data['auc_xgb']:.2f})"
-    # )
 
     fig_prob_logit = make_prob_gauge(
         data["prob_red_logit"],
@@ -1470,16 +1434,7 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename, 
             )
         except Exception as e:
             logging.warning(f"Could not parse FSI/regimes for cumret chart: {e}")
-    
-    # If no PnL uploaded or no benchmarks, return an empty chart
-    # if (not upload_contents) or (upload_filename is None):
-    #     empty_series = pd.Series(dtype=float)
-    #     return make_cumret_figure(
-    #         neptune_returns=empty_series,
-    #         benchmark_returns=benchmark_returns,
-    #         start_date=start_date,
-    #         end_date=end_date
-    #     )
+
 
     if (not upload_contents) or (upload_filename is None):
         empty_series = pd.Series(dtype=float)
