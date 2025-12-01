@@ -48,10 +48,17 @@ try:
     benchmark_returns = get_benchmark_returns().sort_index()
 
     # Rename human-readable FMP names to short labels used in the legend
+    # rename_map = {
+    #     "MSCI ACWI": "ACWI",
+    #     "S&P 500": "SPX",
+    #     "S&P 500 EW": "SPXETWR",
+    # }
+    # benchmark_returns = benchmark_returns.rename(columns=rename_map)
+
     rename_map = {
         "MSCI ACWI": "ACWI",
-        "S&P 500": "SPX",
-        "S&P 500 EW": "SPXETWR",
+        "SPY":       "SPY",
+        "SPY EW":    "SPY EW",
     }
     benchmark_returns = benchmark_returns.rename(columns=rename_map)
 
@@ -419,9 +426,14 @@ app.layout = html.Div([
 
             # ========= NEW: Cumulative Returns vs Benchmarks =========
             html.Div([
+                # html.H3([
+                #     "Cumulative Returns vs Benchmarks",
+                #     info_icon("Cumulative performance of NEPTUNE vs S&P 500, S&P 500 equal-weighted, and MSCI ACWI.")
+                # ], style={"marginTop": "18px"}),
+
                 html.H3([
                     "Cumulative Returns vs Benchmarks",
-                    info_icon("Cumulative performance of NEPTUNE vs S&P 500, S&P 500 equal-weighted, and MSCI ACWI.")
+                    info_icon("Cumulative performance of NEPTUNE vs SPY (S&P 500 ETF), SPY equal-weighted proxy, and MSCI ACWI.")
                 ], style={"marginTop": "18px"}),
 
                 html.Label("Select date range (cumulative returns):"),

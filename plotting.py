@@ -895,10 +895,10 @@ def make_cumret_figure(
     """
 
     COLOR_MAP = {
-        "NEPTUNE":  "#0077b6",  # darkest
-        "ACWI":     "#1fa4ff",
-        "SPX":      "#7fc8ff",
-        "SPXETWR":  "#cfe9ff",  # lightest
+        "NEPTUNE": "#0077b6",  # darkest
+        "ACWI":    "#1fa4ff",
+        "SPY":     "#7fc8ff",
+        "SPY EW":  "#cfe9ff",  # lightest
     }
     DEFAULT_COLOR = "#555555"
 

@@ -202,12 +202,17 @@ def get_all_series(config):
 # ACWI  -> MSCI All Country World (ETF proxy)
 # ^GSPC -> S&P 500 index
 # RSP   -> S&P 500 Equal Weight ETF
-BENCHMARK_SYMBOLS = {
-    "ACWI": "MSCI ACWI",
-    "^GSPC": "S&P 500",
-    "RSP": "S&P 500 EW",
-}
+# BENCHMARK_SYMBOLS = {
+#     "ACWI": "MSCI ACWI",
+#     "^GSPC": "S&P 500",
+#     "RSP": "S&P 500 EW",
+# }
 
+BENCHMARK_SYMBOLS = {
+    "ACWI": "MSCI ACWI",           # still ACWI ETF
+    "SPY":  "SPY",                 # S&P 500 ETF
+    "RSP":  "SPY EW",              # S&P 500 Equal Weight ETF proxy
+}
 
 def fetch_fmp_daily_close(
     symbol: str,
