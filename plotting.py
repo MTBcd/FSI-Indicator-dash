@@ -545,35 +545,123 @@ def plot_pnl_with_regime_ribbons(pnl_df, contribs_by_group, fsi_series, regimes=
             bordercolor="red", borderwidth=1, borderpad=4, bgcolor="rgba(255, 255, 255, 0.5)"
         )
 
-        neptune_end = pnl_series.index.max()
-        # PORTFOLIO arrow
-        fig.add_shape(type="line", x0="2019-01-01", x1="2024-02-01", y0=-0.065, y1=-0.065,
-                      line=dict(color="darkblue", width=3), xref='x', yref='y', layer="above")
-        fig.add_annotation(x="2019-01-01", y=-0.065, xref='x', yref='y',
-                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-                           arrowcolor="darkblue", ax=30, ay=0)
-        fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
-                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-                           arrowcolor="darkblue", ax=-30, ay=0)
-        fig.add_annotation(x="2023-06-23", y=-0.075, xref='x', yref='y',
-                           text="<b>PORTFOLIO</b>", showarrow=False,
-                           font=dict(family="Arial Black", size=16, color="darkblue"), align="center")
 
-        # NEPTUNE arrow
-        fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.065, y1=-0.065,
-                      line=dict(color="#3096B9", width=3), xref='x', yref='y', layer="above")
-        fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
-                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-                           arrowcolor="#3096B9", ax=30, ay=0)
-        fig.add_annotation(x=neptune_end, y=-0.065, xref='x', yref='y',
-                           showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
-                           arrowcolor="#3096B9", ax=-30, ay=0)
-        fig.add_annotation(
-            x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
-            y=-0.075, xref='x', yref='y',
-            text="<b>NEPTUNE</b>", showarrow=False,
-            font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
-        )
+        # --- Dynamic arrow + label placement so they stay visible ---
+
+        # Visible window of the chart
+        pnl_start = pnl_series.index.min()
+        pnl_end   = pnl_series.index.max()
+        neptune_end = pnl_end
+
+        # Use the tick range to place arrows just above the bottom of the chart
+        span = yticks[-1] - yticks[0] if len(yticks) > 1 else (yticks[-1] - yticks[0] if len(yticks) == 2 else 0)
+        if span <= 0:
+            # Fallback: keep them at the bottom tick
+            arrow_y = yticks[0]
+            label_y = yticks[0]
+        else:
+            # e.g. arrow at 20% above the bottom, label a bit below the arrow
+            arrow_y = yticks[0] + 0.20 * span
+            label_y = yticks[0] + 0.08 * span
+
+        # Reference dates for when Portfolio vs Neptune regime applies
+        portfolio_start_ref = pd.to_datetime("2019-01-01")
+        portfolio_end_ref   = pd.to_datetime("2024-02-01")
+        neptune_start_ref   = portfolio_end_ref
+
+        # --- PORTFOLIO arrow: visible part of [2019-01-01, 2024-02-01] in the selected window ---
+        ps = max(portfolio_start_ref, pnl_start)
+        pe = min(portfolio_end_ref, pnl_end)
+
+        if ps < pe:
+            # Line
+            fig.add_shape(
+                type="line",
+                x0=ps, x1=pe,
+                y0=arrow_y, y1=arrow_y,
+                line=dict(color="darkblue", width=3),
+                xref='x', yref='y', layer="above"
+            )
+            # Arrowheads
+            fig.add_annotation(
+                x=ps, y=arrow_y, xref='x', yref='y',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                arrowcolor="darkblue", ax=30, ay=0
+            )
+            fig.add_annotation(
+                x=pe, y=arrow_y, xref='x', yref='y',
+                showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                arrowcolor="darkblue", ax=-30, ay=0
+            )
+            # Label at the middle of the visible segment
+            fig.add_annotation(
+                x=ps + (pe - ps) / 2,
+                y=label_y, xref='x', yref='y',
+                text="<b>PORTFOLIO</b>", showarrow=False,
+                font=dict(family="Arial Black", size=16, color="darkblue"),
+                align="center"
+            )
+
+        # --- NEPTUNE arrow: from 2024-02-01 to end of visible window ---
+        custom_color_dark = '#3096B9'
+        if pnl_end > neptune_start_ref:
+            ns = max(neptune_start_ref, pnl_start)
+            ne = pnl_end
+            if ns < ne:
+                fig.add_shape(
+                    type="line",
+                    x0=ns, x1=ne,
+                    y0=arrow_y, y1=arrow_y,
+                    line=dict(color=custom_color_dark, width=3),
+                    xref='x', yref='y', layer="above"
+                )
+                fig.add_annotation(
+                    x=ns, y=arrow_y, xref='x', yref='y',
+                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                    arrowcolor=custom_color_dark, ax=30, ay=0
+                )
+                fig.add_annotation(
+                    x=ne, y=arrow_y, xref='x', yref='y',
+                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+                    arrowcolor=custom_color_dark, ax=-30, ay=0
+                )
+                fig.add_annotation(
+                    x=ns + (ne - ns) / 2,
+                    y=label_y, xref='x', yref='y',
+                    text="<b>NEPTUNE</b>", showarrow=False,
+                    font=dict(family="Arial Black", size=16, color=custom_color_dark),
+                    align="center"
+                )
+
+        # neptune_end = pnl_series.index.max()
+        # # PORTFOLIO arrow
+        # fig.add_shape(type="line", x0="2019-01-01", x1="2024-02-01", y0=-0.065, y1=-0.065,
+        #               line=dict(color="darkblue", width=3), xref='x', yref='y', layer="above")
+        # fig.add_annotation(x="2019-01-01", y=-0.065, xref='x', yref='y',
+        #                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+        #                    arrowcolor="darkblue", ax=30, ay=0)
+        # fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
+        #                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+        #                    arrowcolor="darkblue", ax=-30, ay=0)
+        # fig.add_annotation(x="2023-06-23", y=-0.075, xref='x', yref='y',
+        #                    text="<b>PORTFOLIO</b>", showarrow=False,
+        #                    font=dict(family="Arial Black", size=16, color="darkblue"), align="center")
+
+        # # NEPTUNE arrow
+        # fig.add_shape(type="line", x0="2024-02-01", x1=neptune_end, y0=-0.065, y1=-0.065,
+        #               line=dict(color="#3096B9", width=3), xref='x', yref='y', layer="above")
+        # fig.add_annotation(x="2024-02-01", y=-0.065, xref='x', yref='y',
+        #                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+        #                    arrowcolor="#3096B9", ax=30, ay=0)
+        # fig.add_annotation(x=neptune_end, y=-0.065, xref='x', yref='y',
+        #                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2,
+        #                    arrowcolor="#3096B9", ax=-30, ay=0)
+        # fig.add_annotation(
+        #     x=pd.to_datetime("2024-02-01") + (neptune_end - pd.to_datetime("2024-02-01")) / 2,
+        #     y=-0.075, xref='x', yref='y',
+        #     text="<b>NEPTUNE</b>", showarrow=False,
+        #     font=dict(family="Arial Black", size=16, color="#3096B9"), align="center"
+        # )
 
         # fig.update_layout(
         #     template="plotly_white",
