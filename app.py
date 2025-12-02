@@ -95,11 +95,13 @@ def build_pnl_stats_table(pnl_series: pd.Series):
 
     total_n = len(s)
 
-    # Define bins (in decimal)
+    # Bins in decimals
     pos_bins = [(0.0, 0.03), (0.03, 0.05), (0.05, np.inf)]
     neg_bins = [(-0.03, 0.0), (-0.05, -0.03), (-np.inf, -0.05)]
+
+    # Column labels – match the blue slide
     pos_labels = ["0% to 3%", "3% to 5%", "5% or more"]
-    neg_labels = ["-3% to 0%", "-5% to -3%", "-5% or less"]
+    neg_labels = ["0% to -3%", "-3% to -5%", "-5% or less"]
 
     def stats_for_bins(series, bins):
         counts, pct_total, avg_pnl = [], [], []
@@ -114,11 +116,12 @@ def build_pnl_stats_table(pnl_series: pd.Series):
             counts.append(c)
             pct_total.append(100.0 * c / total_n if total_n > 0 else 0.0)
             if c > 0:
-                avg_pnl.append(100.0 * series[mask].mean())
+                avg_pnl.append(100.0 * series[mask].mean())  # in %
             else:
                 avg_pnl.append(np.nan)
         return counts, pct_total, avg_pnl
 
+    # Split into positive and negative observations
     pos_mask = (s > 0)
     neg_mask = (s < 0)
 
@@ -133,6 +136,7 @@ def build_pnl_stats_table(pnl_series: pd.Series):
     total_pos_avg = 100.0 * s[pos_mask].mean() if total_pos > 0 else np.nan
     total_neg_avg = 100.0 * s[neg_mask].mean() if total_neg > 0 else np.nan
 
+    # Share of positive P/L by bucket (% of full positive P/L)
     total_pos_pnl = s[pos_mask].sum()
     pnl_share = []
     for (lo, hi) in pos_bins:
@@ -146,89 +150,101 @@ def build_pnl_stats_table(pnl_series: pd.Series):
         pnl_share.append(share)
 
     def fmt_pct(x):
-        return "" if np.isnan(x) else f"{x:.2f}%"
+        # Show "-" for empty cells, otherwise 2-decimals %
+        return "-" if np.isnan(x) else f"{x:.2f}%"
+
+    header_style = {
+        "padding": "6px 10px",
+        "background": "#003366",
+        "color": "white",
+        "textAlign": "center"
+    }
+    row_header_style = {
+        "background": "#005b96",
+        "color": "white",
+        "padding": "6px 10px",
+        "textAlign": "center"
+    }
+    cell_style = {"padding": "4px 10px", "textAlign": "center"}
 
     table = html.Table([
-        html.Thead(
-            html.Tr([
-                html.Th("", style={"padding": "6px 10px", "background": "#003366",
-                                   "color": "white", "textAlign": "center"}),
-                *[html.Th(lbl, style={"padding": "6px 10px", "background": "#003366",
-                                      "color": "white", "textAlign": "center"})
-                  for lbl in pos_labels],
-                html.Th("Total", style={"padding": "6px 10px", "background": "#003366",
-                                        "color": "white", "textAlign": "center"})
-            ])
-        ),
         html.Tbody([
+            # ---- Pnl Positive header row (matches blue slide) ----
             html.Tr([
-                html.Th("PnL Positive", colSpan=5,
-                        style={"background": "#005b96", "color": "white",
-                               "padding": "6px 10px", "textAlign": "center"})
-            ]),
-            html.Tr([
-                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px",
-                                            "textAlign": "center"}),
-                *[html.Td(str(c), style={"padding": "4px 10px", "textAlign": "center"})
-                  for c in pos_counts],
-                html.Td(str(total_pos), style={"padding": "4px 10px", "textAlign": "center"})
-            ]),
-            html.Tr([
-                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px",
-                                             "textAlign": "center"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
-                  for x in pos_pct_total],
-                html.Td(fmt_pct(total_pos_pct), style={"padding": "4px 10px", "textAlign": "center"})
-            ]),
-            html.Tr([
-                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px",
-                                                       "textAlign": "center"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
-                  for x in pos_avg],
-                html.Td(fmt_pct(total_pos_avg), style={"padding": "4px 10px", "textAlign": "center"})
+                html.Th("Pnl Positive", style=header_style),
+                *[html.Th(lbl, style=header_style) for lbl in pos_labels],
+                html.Th("Total", style=header_style),
             ]),
 
+            # Positive: Instances
             html.Tr([
-                html.Th("PnL Negative", colSpan=5,
-                        style={"background": "#005b96", "color": "white",
-                               "padding": "6px 10px", "paddingTop": "10px",
-                               "textAlign": "center"})
+                html.Td("Instances", style={"fontWeight": "bold", **cell_style}),
+                *[html.Td(str(c), style=cell_style) for c in pos_counts],
+                html.Td(str(total_pos), style=cell_style),
             ]),
+            # Positive: % of Total
             html.Tr([
-                html.Td("Instances", style={"fontWeight": "bold", "padding": "4px 10px",
-                                            "textAlign": "center"}),
-                *[html.Td(str(c), style={"padding": "4px 10px", "textAlign": "center"})
-                  for c in neg_counts],
-                html.Td(str(total_neg), style={"padding": "4px 10px", "textAlign": "center"})
+                html.Td("% of Total", style={"fontWeight": "bold", **cell_style}),
+                *[html.Td(fmt_pct(x), style=cell_style) for x in pos_pct_total],
+                html.Td(fmt_pct(total_pos_pct), style=cell_style),
             ]),
+            # Positive: Avg Pnl of Instances
             html.Tr([
-                html.Td("% of Total", style={"fontWeight": "bold", "padding": "4px 10px",
-                                             "textAlign": "center"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
-                  for x in neg_pct_total],
-                html.Td(fmt_pct(total_neg_pct), style={"padding": "4px 10px", "textAlign": "center"})
-            ]),
-            html.Tr([
-                html.Td("Avg PnL of Instances", style={"fontWeight": "bold", "padding": "4px 10px",
-                                                       "textAlign": "center"}),
-                *[html.Td(fmt_pct(x), style={"padding": "4px 10px", "textAlign": "center"})
-                  for x in neg_avg],
-                html.Td(fmt_pct(total_neg_avg), style={"padding": "4px 10px", "textAlign": "center"})
+                html.Td("Avg Pnl of Instances", style={"fontWeight": "bold", **cell_style}),
+                *[html.Td(fmt_pct(x), style=cell_style) for x in pos_avg],
+                html.Td(fmt_pct(total_pos_avg), style=cell_style),
             ]),
 
+            # ---- Spacer row to mimic section break ----
+            html.Tr([
+                html.Td("", colSpan=5, style={"height": "6px", "background": "transparent"})
+            ]),
+
+            # ---- Pnl Negative header row ----
+            html.Tr([
+                html.Th("Pnl Negative", style=header_style),
+                *[html.Th(lbl, style=header_style) for lbl in neg_labels],
+                html.Th("Total", style=header_style),
+            ]),
+
+            # Negative: Instances
+            html.Tr([
+                html.Td("Instances", style={"fontWeight": "bold", **cell_style}),
+                *[html.Td(str(c), style=cell_style) for c in neg_counts],
+                html.Td(str(total_neg), style=cell_style),
+            ]),
+            # Negative: % of Total
+            html.Tr([
+                html.Td("% of Total", style={"fontWeight": "bold", **cell_style}),
+                *[html.Td(fmt_pct(x), style=cell_style) for x in neg_pct_total],
+                html.Td(fmt_pct(total_neg_pct), style=cell_style),
+            ]),
+            # Negative: Avg Pnl of Instances
+            html.Tr([
+                html.Td("Avg Pnl of Instances", style={"fontWeight": "bold", **cell_style}),
+                *[html.Td(fmt_pct(x), style=cell_style) for x in neg_avg],
+                html.Td(fmt_pct(total_neg_avg), style=cell_style),
+            ]),
+
+            # ---- Last row: % of full P/L per range (positive side only) ----
             html.Tr([
                 html.Td("% of full P/L per range", style={
-                    "fontWeight": "bold", "padding": "6px 10px",
-                    "borderTop": "2px solid #003366", "textAlign": "center"
+                    "fontWeight": "bold",
+                    "padding": "6px 10px",
+                    "borderTop": "2px solid #003366",
+                    "textAlign": "center"
                 }),
-                *[html.Td(fmt_pct(x), style={"padding": "6px 10px",
-                                             "borderTop": "2px solid #003366",
-                                             "textAlign": "center"})
-                  for x in pnl_share],
-                html.Td("100.00%", style={"padding": "6px 10px",
-                                          "borderTop": "2px solid #003366",
-                                          "textAlign": "center"})
-            ])
+                *[html.Td(fmt_pct(x), style={
+                    "padding": "6px 10px",
+                    "borderTop": "2px solid #003366",
+                    "textAlign": "center"
+                }) for x in pnl_share],
+                html.Td("100.00%", style={
+                    "padding": "6px 10px",
+                    "borderTop": "2px solid #003366",
+                    "textAlign": "center"
+                }),
+            ]),
         ])
     ], style={
         "borderCollapse": "collapse",
@@ -236,7 +252,7 @@ def build_pnl_stats_table(pnl_series: pd.Series):
         "background": "white",
         "boxShadow": "0 2px 8px rgba(0,0,0,0.05)",
         "marginTop": "8px",
-        "textAlign": "center"
+        "textAlign": "center",
     })
 
     return table
