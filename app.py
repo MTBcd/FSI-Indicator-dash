@@ -217,7 +217,7 @@ def build_pnl_stats_table(pnl_series: pd.Series):
             ]),
 
             html.Tr([
-                html.Td("% of P/L per positive range", style={
+                html.Td("% of full P/L per range", style={
                     "fontWeight": "bold", "padding": "6px 10px",
                     "borderTop": "2px solid #003366", "textAlign": "center"
                 }),
