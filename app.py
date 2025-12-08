@@ -469,6 +469,20 @@ app.layout = html.Div([
                 ),
             ], style={**CONTENT_STYLE, "marginTop": "35px", "marginBottom": "20px"}),
 
+                html.Label("Shade regimes (cumulative returns):"),
+                dcc.Checklist(
+                    id='cumret-ribbon-filter',
+                    options=[{'label': r, 'value': r} for r in ['Green', 'Yellow', 'Amber', 'Red']],
+                    value=['Green', 'Yellow', 'Amber', 'Red'],  # default: show all
+                    inline=True,
+                    style={"marginBottom": "10px"}
+                ),
+
+                dcc.Graph(
+                    id='fig-cumret',
+                    style=MAIN_GRAPH_STYLE
+                ),
+
     html.Hr(),
 
     # --- Forward-Looking & Regime Metrics ---
@@ -1434,11 +1448,11 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     Input('upload-pnl', 'contents'),
     Input('cumret-date-range', 'start_date'),
     Input('cumret-date-range', 'end_date'),
-    Input('ribbon-filter', 'value'),
+    Input('cumret-ribbon-filter', 'value'),
     State('upload-pnl', 'filename'),
     State('fsi-store', 'data')  
 )
-def update_cumret_chart(upload_contents, start_date, end_date, ribbon_filter, upload_filename, fsi_data):
+def update_cumret_chart(upload_contents, start_date, end_date, cumret_ribbon_filter, upload_filename, fsi_data):
     # Load FSI + regimes (for ribbons). If not available, we simply won't draw them.
     fsi_series = None
     regimes = None
@@ -1463,7 +1477,7 @@ def update_cumret_chart(upload_contents, start_date, end_date, ribbon_filter, up
             end_date=end_date,
             fsi_series=fsi_series,
             regimes=regimes,
-            regime_filter=ribbon_filter
+            regime_filter=cumret_ribbon_filter
         )
 
 
@@ -1497,7 +1511,7 @@ def update_cumret_chart(upload_contents, start_date, end_date, ribbon_filter, up
             end_date=end_date,
             fsi_series=fsi_series,
             regimes=regimes,
-            regime_filter=ribbon_filter
+            regime_filter=cumret_ribbon_filter
         )
 
     # Parse dates
@@ -1528,7 +1542,7 @@ def update_cumret_chart(upload_contents, start_date, end_date, ribbon_filter, up
         end_date=end_date,
         fsi_series=fsi_series,
         regimes=regimes,
-        regime_filter=ribbon_filter
+        regime_filter=cumret_ribbon_filter
     )
 
 if __name__ == "__main__":
