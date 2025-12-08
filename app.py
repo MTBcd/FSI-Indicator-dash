@@ -440,13 +440,8 @@ app.layout = html.Div([
 
             ], style={**CONTENT_STYLE, 'margin-bottom': '30px'}),
 
-            # ========= NEW: Cumulative Returns vs Benchmarks =========
+            # ========= Cumulative Returns vs Benchmarks =========
             html.Div([
-                # html.H3([
-                #     "Cumulative Returns vs Benchmarks",
-                #     info_icon("Cumulative performance of NEPTUNE vs S&P 500, S&P 500 equal-weighted, and MSCI ACWI.")
-                # ], style={"marginTop": "18px"}),
-
                 html.H3([
                     "Cumulative Returns vs Benchmarks",
                     info_icon("Cumulative performance of NEPTUNE vs SPY (S&P 500 ETF), SPY equal-weighted proxy, and MSCI ACWI.")
@@ -463,12 +458,6 @@ app.layout = html.Div([
                     style={"marginBottom": "10px"}
                 ),
 
-                dcc.Graph(
-                    id='fig-cumret',
-                    style=MAIN_GRAPH_STYLE
-                ),
-            ], style={**CONTENT_STYLE, "marginTop": "35px", "marginBottom": "20px"}),
-
                 html.Label("Shade regimes (cumulative returns):"),
                 dcc.Checklist(
                     id='cumret-ribbon-filter',
@@ -482,6 +471,7 @@ app.layout = html.Div([
                     id='fig-cumret',
                     style=MAIN_GRAPH_STYLE
                 ),
+            ], style={**CONTENT_STYLE, "marginTop": "35px", "marginBottom": "20px"}),
 
     html.Hr(),
 
