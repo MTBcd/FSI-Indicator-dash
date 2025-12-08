@@ -11,7 +11,7 @@ import time
 import numpy as np
 import logging
 import os
-  
+
 # --- Your framework imports ---
 from main import load_configuration, merge_data
 from fsi_estimation import compute_timevarying_contributions, estimate_fsi_expanding_with_als
@@ -19,7 +19,7 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
-    plot_distribution_plotly, make_cumret_figure, ribbon_filter
+    plot_distribution_plotly, make_cumret_figure
 )
 from data_fetching import get_benchmark_returns
 from utils import (
@@ -1438,7 +1438,7 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     State('upload-pnl', 'filename'),
     State('fsi-store', 'data')  
 )
-def update_cumret_chart(upload_contents, start_date, end_date, upload_filename, fsi_data):
+def update_cumret_chart(upload_contents, start_date, end_date, ribbon_filter, upload_filename, fsi_data):
     # Load FSI + regimes (for ribbons). If not available, we simply won't draw them.
     fsi_series = None
     regimes = None
