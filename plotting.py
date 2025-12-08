@@ -887,6 +887,7 @@ def make_cumret_figure(
     end_date=None,
     fsi_series: pd.Series | None = None,
     regimes: pd.Series | None = None,
+    regime_filter=None,
 ) -> go.Figure:
     """
     Build a cumulative return chart for NEPTUNE vs benchmarks.
@@ -967,7 +968,7 @@ def make_cumret_figure(
 
             if not fsi_window.empty:
                 fsi_daily, regimes_daily = _prepare_ribbons(fsi_window, regimes_window)
-                add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily)
+                add_regime_ribbons(fig, fsi_daily, regimes=regimes_daily, regime_filter=regime_filter)
     except Exception as e:
         logging.error(f"Error adding regime ribbons to cumret chart: {e}", exc_info=True)
 

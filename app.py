@@ -19,7 +19,7 @@ from plotting import (
     plot_group_contributions_with_regime,
     plot_grouped_contributions,
     plot_pnl_with_regime_ribbons,
-    plot_distribution_plotly, make_cumret_figure
+    plot_distribution_plotly, make_cumret_figure, ribbon_filter
 )
 from data_fetching import get_benchmark_returns
 from utils import (
@@ -1434,6 +1434,7 @@ def update_pnl_distributions(upload_contents, start_date, end_date, upload_filen
     Input('upload-pnl', 'contents'),
     Input('cumret-date-range', 'start_date'),
     Input('cumret-date-range', 'end_date'),
+    Input('ribbon-filter', 'value'),
     State('upload-pnl', 'filename'),
     State('fsi-store', 'data')  
 )
@@ -1460,8 +1461,9 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename, 
             benchmark_returns=benchmark_returns,
             start_date=start_date,
             end_date=end_date,
-            fsi_series=fsi_series,      # 🔹 pass ribbons data
-            regimes=regimes
+            fsi_series=fsi_series,
+            regimes=regimes,
+            regime_filter=ribbon_filter
         )
 
 
@@ -1492,7 +1494,10 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename, 
             neptune_returns=empty_series,
             benchmark_returns=benchmark_returns,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            fsi_series=fsi_series,
+            regimes=regimes,
+            regime_filter=ribbon_filter
         )
 
     # Parse dates
@@ -1522,7 +1527,8 @@ def update_cumret_chart(upload_contents, start_date, end_date, upload_filename, 
         start_date=start_date,
         end_date=end_date,
         fsi_series=fsi_series,
-        regimes=regimes
+        regimes=regimes,
+        regime_filter=ribbon_filter
     )
 
 if __name__ == "__main__":
