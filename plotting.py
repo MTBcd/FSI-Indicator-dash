@@ -147,6 +147,32 @@ def add_event_annotations(fig, events_dict, event_heights=None):
             borderpad=4,
         )
 
+# def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1, regime_filter=None):
+#     """Add regime-based colored ribbons to the plot."""
+#     df = pd.DataFrame({'FSI': fsi_series, 'Regime': regimes})
+#     df['RegimeShift'] = (df['Regime'] != df['Regime'].shift()).cumsum()
+#     colors = {
+#         'Green': 'rgba(0, 200, 0, 0.3)',
+#         'Yellow': 'rgba(255, 255, 0, 0.3)',
+#         'Amber': 'rgba(255, 165, 0, 0.3)',
+#         'Red': 'rgba(255, 0, 0, 0.3)'
+#     }
+
+#     # NEW: filter which regimes to draw
+#     allowed = set(regime_filter) if regime_filter else set(colors.keys())
+
+#     for _, seg in df.groupby('RegimeShift'):
+#         regime = seg['Regime'].iloc[0]
+#         if regime not in allowed:
+#             continue
+#         fig.add_vrect(
+#             x0=seg.index[0],
+#             x1=seg.index[-1] + pd.Timedelta(days=1),
+#             fillcolor=colors.get(regime, 'rgba(100,100,100,0.1)'),
+#             opacity=1, layer="below", line_width=0, row=row, col=col
+#         )
+
+
 def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1, regime_filter=None):
     """Add regime-based colored ribbons to the plot."""
     df = pd.DataFrame({'FSI': fsi_series, 'Regime': regimes})
@@ -158,8 +184,14 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1, regime_filter=Non
         'Red': 'rgba(255, 0, 0, 0.3)'
     }
 
-    # NEW: filter which regimes to draw
-    allowed = set(regime_filter) if regime_filter else set(colors.keys())
+    # ✅ Correct handling:
+    # - regime_filter is None  -> show ALL
+    # - regime_filter is []    -> show NONE
+    # - regime_filter is list  -> show only selected
+    if regime_filter is None:
+        allowed = set(colors.keys())
+    else:
+        allowed = set(regime_filter)
 
     for _, seg in df.groupby('RegimeShift'):
         regime = seg['Regime'].iloc[0]
@@ -169,7 +201,11 @@ def add_regime_ribbons(fig, fsi_series, regimes, row=1, col=1, regime_filter=Non
             x0=seg.index[0],
             x1=seg.index[-1] + pd.Timedelta(days=1),
             fillcolor=colors.get(regime, 'rgba(100,100,100,0.1)'),
-            opacity=1, layer="below", line_width=0, row=row, col=col
+            opacity=1,
+            layer="below",
+            line_width=0,
+            row=row,
+            col=col,
         )
 
 
