@@ -951,7 +951,7 @@ def make_cumret_figure(
     all_data = pd.concat(
         [neptune_returns.rename("NEPTUNE"), bench],
         axis=1
-    ).sort_index().ffill().dropna(how="all")
+    ).sort_index().dropna(how="all") #.ffill()
 
     if all_data.empty:
         return go.Figure()
