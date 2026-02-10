@@ -939,36 +939,78 @@ def make_cumret_figure(
     }
     DEFAULT_COLOR = "#555555"
 
+    # ---- Guards ----
     if neptune_returns is None or neptune_returns.empty:
         return go.Figure()
 
+    # Ensure NEPTUNE is a clean Series with DateTimeIndex
+    neptune = pd.Series(neptune_returns).copy()
+    neptune.index = pd.to_datetime(neptune.index)
+    neptune = neptune.sort_index()
+    neptune.name = "NEPTUNE"
+
+    # Apply date filters using NEPTUNE as the master calendar
+    idx = neptune.index
+    if start_date is not None:
+        start_ts = pd.to_datetime(start_date)
+        idx = idx[idx >= start_ts]
+    if end_date is not None:
+        end_ts = pd.to_datetime(end_date)
+        idx = idx[idx <= end_ts]
+
+    if len(idx) == 0:
+        return go.Figure()
+
+    # Reindex NEPTUNE to the filtered calendar (it may already match)
+    neptune = neptune.reindex(idx)
+
+    # Benchmarks frame
     if benchmark_returns is None or benchmark_returns.empty:
-        bench = pd.DataFrame(index=neptune_returns.index)
+        bench = pd.DataFrame(index=idx)
     else:
         bench = benchmark_returns.copy()
+        bench.index = pd.to_datetime(bench.index)
+        bench = bench.sort_index()
 
-    # Combine NEPTUNE + benchmarks
-    all_data = pd.concat(
-        [neptune_returns.rename("NEPTUNE"), bench],
-        axis=1
-    ).sort_index().dropna(how="all") #.ffill()
+        # Reindex benchmarks onto NEPTUNE calendar (master x-axis)
+        bench = bench.reindex(idx)
 
-    if all_data.empty:
+        # Fill benchmark gaps correctly:
+        # - 0 returns for missing dates INSIDE each benchmark's real coverage
+        # - keep NaN outside coverage (before first_valid and after last_valid)
+        for c in bench.columns:
+            s_orig = benchmark_returns[c].copy() if c in benchmark_returns.columns else None
+            if s_orig is None:
+                continue
+
+            s_orig = pd.Series(s_orig)
+            s_orig.index = pd.to_datetime(s_orig.index)
+            s_orig = s_orig.sort_index()
+
+            if not s_orig.notna().any():
+                continue
+
+            first = s_orig.first_valid_index()
+            last  = s_orig.last_valid_index()
+
+            inside = (bench.index >= first) & (bench.index <= last)
+            bench.loc[inside, c] = bench.loc[inside, c].fillna(0.0)
+
+    # Combine returns (no ffill)
+    all_data = pd.concat([neptune, bench], axis=1)
+
+    # If NEPTUNE has NaNs, treat missing returns as 0 (common if user uploads sparse marks)
+    # If you prefer NEPTUNE gaps to remain gaps, remove the next line.
+    all_data["NEPTUNE"] = all_data["NEPTUNE"].fillna(0.0)
+
+    if all_data.dropna(how="all").empty:
         return go.Figure()
 
-    # Apply date filters
-    if start_date is not None:
-        all_data = all_data[all_data.index >= pd.to_datetime(start_date)]
-    if end_date is not None:
-        all_data = all_data[all_data.index <= pd.to_datetime(end_date)]
-
-    if all_data.empty:
-        return go.Figure()
-
-    # Daily returns → cumulative returns, rebased at start
+    # Daily returns → cumulative returns (rebased at start of filtered window)
     cum = (1.0 + all_data).cumprod() - 1.0
-    cum_pct = cum * 100.0  # in percent
+    cum_pct = cum * 100.0
 
+    # ---- Plot ----
     fig = go.Figure()
     for col in cum_pct.columns:
         fig.add_trace(
@@ -977,26 +1019,25 @@ def make_cumret_figure(
                 y=cum_pct[col],
                 mode="lines",
                 name=col,
-                line=dict(
-                    width=2,
-                    color=COLOR_MAP.get(col, DEFAULT_COLOR),
-                ),
+                line=dict(width=2, color=COLOR_MAP.get(col, DEFAULT_COLOR)),
+                connectgaps=False,  # important: don't draw through NaNs
             )
         )
 
-    # 🔹 Add FSI regime ribbons as background (like PnL chart)
+    # ---- Regime ribbons ----
     try:
         if fsi_series is not None and regimes is not None:
-            # Make sure they're Series with DateTimeIndex
-            fsi_series = pd.Series(fsi_series)
+            fsi_series = pd.Series(fsi_series).copy()
             fsi_series.index = pd.to_datetime(fsi_series.index)
+            fsi_series = fsi_series.sort_index()
 
             if not isinstance(regimes, pd.Series):
                 regimes = pd.Series(regimes, index=fsi_series.index)
             else:
+                regimes = regimes.copy()
                 regimes.index = pd.to_datetime(regimes.index)
+                regimes = regimes.sort_index()
 
-            # Restrict FSI/regimes to the cumret visible window
             idx_min = cum_pct.index.min()
             idx_max = cum_pct.index.max()
             fsi_window = fsi_series.loc[idx_min:idx_max]
@@ -1008,33 +1049,10 @@ def make_cumret_figure(
     except Exception as e:
         logging.error(f"Error adding regime ribbons to cumret chart: {e}", exc_info=True)
 
-
-    # fig.update_layout(
-    #     title="Cumulative Returns (rebased to 0% at selected start date)",
-    #     xaxis_title=None,  # we set via apply_standard_date_axis
-    #     yaxis_title=None,
-    #     hovermode="x unified",
-    #     legend=dict(
-    #         orientation="v",
-    #         yanchor="top",
-    #         y=1.0,
-    #         xanchor="left",
-    #         x=1.02,
-    #     ),
-    #     margin=dict(l=50, r=160, t=20, b=40),
-    # )
-    # fig.update_xaxes(showgrid=False, zeroline=False)
-    # fig.update_yaxes(
-    #     title=dict(text="<b>Cumulative Return (%)</b>", font=AXIS_TITLE_FONT),
-    #     tickfont=AXIS_TICK_FONT,
-    #     showgrid=False,
-    #     zeroline=False,
-    # )
-
-
+    # ---- Layout ----
     fig.update_layout(
         title="Cumulative Returns (rebased to 0% at selected start date)",
-        xaxis_title=None,  # handled by apply_standard_date_axis
+        xaxis_title=None,
         yaxis_title=None,
         hovermode="x unified",
         legend=dict(
@@ -1044,8 +1062,6 @@ def make_cumret_figure(
             xanchor="left",
             x=1.02,
         ),
-
-        # 🔹 Slightly thinner but still harmonised
         height=FIG_HEIGHT_SECOND,
         margin=FIG_MARGIN_CUMRET,
     )
@@ -1057,9 +1073,7 @@ def make_cumret_figure(
         zeroline=False,
     )
 
-
-
-    # 🔹 Standardized x-axis using cumret index
+    # Standardized x-axis using NEPTUNE calendar (cum_pct.index == idx)
     apply_standard_date_axis(fig, cum_pct.index, title_text="<b>Date</b>")
 
     return fig
