@@ -8,6 +8,9 @@ from fredapi import Fred
 import configparser
 from datetime import datetime
 from functools import reduce
+from typing import Optional
+from ice_bofa_store import get_ice_bofa_series
+import os
 
 
 # ======== Config Loader ==========
@@ -133,9 +136,9 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
             'OVX': 'OVXCLS',
             # '2Y Yield': 'DGS2',
             # 'FRED RRP': 'RRPONTSYD',
-            'US Corp OAS': 'BAMLC0A0CM',
-            'US HY OAS': 'BAMLH0A0HYM2',
-            'US BBB OAS': 'BAMLC0A4CBBBEY'
+            # 'US Corp OAS': 'BAMLC0A0CM',
+            # 'US HY OAS': 'BAMLH0A0HYM2',
+            # 'US BBB OAS': 'BAMLC0A4CBBBEY'
         }
     result = {}
     for out_col, fred_id in series_map.items():
@@ -164,6 +167,14 @@ def get_all_series(config):
     fred_data = get_fred_series(fred_api_key, start_date)
     data.update(fred_data)
 
+    ice_data = get_ice_bofa_series(fred_api_key, start_date=start_date)
+    data.update(ice_data)
+
+    # temporary compatibility alias if needed elsewhere
+    # data['US Corp OAS'] = ice_data['US IG OAS']
+    # data['US HY OAS'] = ice_data['US IG OAS']
+    # data['US BBB OAS'] = ice_data['US IG OAS']
+
     # --- Add FMP or other data ---
     data['MOVE Index'] = fetch_fmp_data('^MOVE', fmp_api_key, start_date=start_date_str)
     data['Gold Price'] = fetch_fmp_data('GC=F', fmp_api_key, start_date=start_date_str)
@@ -190,23 +201,14 @@ def get_all_series(config):
     # if 'VIX' in data and 'VIX3M' in data:
     #     data['VIX-VIX3M Spread'] = data['VIX'] - data['VIX3M']
 
+    data['HYG-LQD Spread'] = get_hyg_lqd_spread(fmp_api_key, start_date=start_date_str)
+
     # --- Combine all into DataFrame, filter to start_date ---
     df_final = pd.concat(data, axis=1)
     df_final = df_final[df_final.index >= start_date].sort_index()
 
     return df_final
 
-
-
-# Symbols and their human-readable names for the app
-# ACWI  -> MSCI All Country World (ETF proxy)
-# ^GSPC -> S&P 500 index
-# RSP   -> S&P 500 Equal Weight ETF
-# BENCHMARK_SYMBOLS = {
-#     "ACWI": "MSCI ACWI",
-#     "^GSPC": "S&P 500",
-#     "RSP": "S&P 500 EW",
-# }
 
 BENCHMARK_SYMBOLS = {
     "ACWI": "MSCI ACWI",           # still ACWI ETF
@@ -217,8 +219,8 @@ BENCHMARK_SYMBOLS = {
 def fetch_fmp_daily_close(
     symbol: str,
     api_key: str,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Fetch daily historical closes for a symbol from FMP.
@@ -252,9 +254,9 @@ def fetch_fmp_daily_close(
 
 
 def get_benchmark_prices(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    api_key: str | None = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Download daily close prices for ACWI, ^GSPC, and RSP from FMP.
@@ -297,9 +299,9 @@ def get_benchmark_prices(
 
 
 def get_benchmark_returns(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    api_key: str | None = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> pd.DataFrame:
     """
     Get DAILY simple returns for benchmarks, in decimal form.

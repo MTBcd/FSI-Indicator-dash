@@ -17,6 +17,7 @@ from sklearn.model_selection import TimeSeriesSplit
 import warnings
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer
+from typing import Optional
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 # warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -727,7 +728,7 @@ def fsi_vol_spike_flags(
     level_quantile=0.50,
     min_history: int = 60,
     dilate_window: int = 2,
-    calibration_mask: pd.Series | None = None,
+    calibration_mask: Optional[pd.Series] = None,
 ) -> pd.Series:
     """
     FSI-only volatility spike detector (slightly more sensitive).
@@ -842,7 +843,7 @@ def _upgrade_with_direction(
     q2: float,
     super_spike_quantile: float = 0.90,
     medium_quantile: float = 0.85,
-    calibration_mask: pd.Series | None = None,
+    calibration_mask: Optional[pd.Series] = None,
 ) -> pd.Series:
     base_int = regime_series.map(REGIME_TO_INT)
     out_int  = base_int.copy()
@@ -1121,7 +1122,7 @@ def classify_regime_fsi_improved(
     min_history_spike: int = 60,
     min_run_length: int = 2,
     super_spike_quantile: float = 0.90,
-    calibration_mask: pd.Series | None = None,
+    calibration_mask: Optional[pd.Series] = None,
 ) -> pd.Series:
     fsi = fsi_series.copy()
     fsi_nonnull = fsi.dropna()

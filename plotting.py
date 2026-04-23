@@ -11,6 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy.stats import gaussian_kde, skew, kurtosis
 from numpy import trapz
+from typing import Optional
  
 
 # --- Shared axis styles (taken from PnL chart) ---
@@ -921,8 +922,8 @@ def make_cumret_figure(
     benchmark_returns: pd.DataFrame,
     start_date=None,
     end_date=None,
-    fsi_series: pd.Series | None = None,
-    regimes: pd.Series | None = None,
+    fsi_series: Optional[pd.Series] = None,
+    regimes: Optional[pd.Series] = None,
     regime_filter=None,
 ) -> go.Figure:
     """
