@@ -177,7 +177,7 @@ def get_all_series(config):
 
     # --- Add FMP or other data ---
     data['MOVE Index'] = fetch_fmp_data('^MOVE', fmp_api_key, start_date=start_date_str)
-    data['Gold Price'] = fetch_fmp_data('GC=F', fmp_api_key, start_date=start_date_str)
+    data['Gold Price'] = fetch_fmp_data('GCUSD', fmp_api_key, start_date=start_date_str) #GC=F
     data['VIX'] = fetch_fmp_data('^VIX', fmp_api_key, start_date=start_date_str)
     data['VIX3M'] = fetch_fmp_data('^VIX3M', fmp_api_key, start_date=start_date_str)
     # data['10Y Yield'] = fetch_fmp_data('^TNX', fmp_api_key, start_date=start_date_str)
