@@ -134,7 +134,8 @@ def get_fred_series(fred_api_key, start_date, series_map=None):
     if series_map is None:
         series_map = {
             'OVX': 'OVXCLS',
-            # '2Y Yield': 'DGS2',
+            '10Y Yield': 'DGS10',
+            '2Y Yield': 'DGS2',
             # 'FRED RRP': 'RRPONTSYD',
             # 'US Corp OAS': 'BAMLC0A0CM',
             # 'US HY OAS': 'BAMLH0A0HYM2',
@@ -184,8 +185,8 @@ def get_all_series(config):
     data['3M T-Bill'] = fetch_fmp_data('^IRX', fmp_api_key, start_date=start_date_str)
     data['USDJPY'] = fetch_fmp_data('USDJPY', fmp_api_key, start_date=start_date_str)
     # data['federalFunds'] = fetch_fmp_data('federalFunds', fmp_api_key, start_date=start_date_str)
-    data['10Y Yield'] = get_treasury_yield_series('year10', fmp_api_key, start_date=start_date_str)
-    data['2Y Yield'] = get_treasury_yield_series('year2', fmp_api_key, start_date=start_date_str)
+    # data['10Y Yield'] = get_treasury_yield_series('year10', fmp_api_key, start_date=start_date_str)
+    # data['2Y Yield'] = get_treasury_yield_series('year2', fmp_api_key, start_date=start_date_str)
 
     # --- NY Fed Official Rates from Excel (preferred over CSV API) ---
     nyfed_rates = get_nyfed_rates_from_excel(start_date=start_date_str)
